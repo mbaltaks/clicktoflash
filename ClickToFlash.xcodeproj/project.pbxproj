@@ -51,6 +51,7 @@
 		844695F70F470D1F00DC783A /* CTFsIFRSupport.m in Sources */ = {isa = PBXBuildFile; fileRef = 844695910F46FC6600DC783A /* CTFsIFRSupport.m */; };
 		845704550F4792320017F3F4 /* CTFWhitelist.m in Sources */ = {isa = PBXBuildFile; fileRef = 845704540F4792320017F3F4 /* CTFWhitelist.m */; };
 		8457045A0F47BC170017F3F4 /* CTFUtilities.m in Sources */ = {isa = PBXBuildFile; fileRef = 845704590F47BC170017F3F4 /* CTFUtilities.m */; };
+		A3F0159D0FCE5E610048C544 /* CTGradient.m in Sources */ = {isa = PBXBuildFile; fileRef = A3F0159C0FCE5E610048C544 /* CTGradient.m */; };
 		A494CC2C0F9F2446007D5EEB /* ctf.icns in Resources */ = {isa = PBXBuildFile; fileRef = A494CC2B0F9F2446007D5EEB /* ctf.icns */; };
 		B5028E930F413553004886D7 /* HarnessAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = B5028E910F413553004886D7 /* HarnessAppDelegate.m */; };
 		B5CFF17A0F40EEF1005DB9CC /* WhitelistPanel.xib in Resources */ = {isa = PBXBuildFile; fileRef = 072189BC0F30D9C3008C8944 /* WhitelistPanel.xib */; };
@@ -155,6 +156,8 @@
 		845704540F4792320017F3F4 /* CTFWhitelist.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = CTFWhitelist.m; path = Plugin/CTFWhitelist.m; sourceTree = "<group>"; };
 		845704580F47BC170017F3F4 /* CTFUtilities.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CTFUtilities.h; path = Plugin/CTFUtilities.h; sourceTree = "<group>"; };
 		845704590F47BC170017F3F4 /* CTFUtilities.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = CTFUtilities.m; path = Plugin/CTFUtilities.m; sourceTree = "<group>"; };
+		A3F0159B0FCE5E610048C544 /* CTGradient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CTGradient.h; path = Plugin/CTGradient.h; sourceTree = "<group>"; };
+		A3F0159C0FCE5E610048C544 /* CTGradient.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = CTGradient.m; path = Plugin/CTGradient.m; sourceTree = "<group>"; };
 		A494CC2B0F9F2446007D5EEB /* ctf.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = ctf.icns; sourceTree = "<group>"; };
 		B5028E910F413553004886D7 /* HarnessAppDelegate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = HarnessAppDelegate.m; path = "TestFiles/Debugging Harness/HarnessAppDelegate.m"; sourceTree = "<group>"; };
 		B5028E920F413553004886D7 /* HarnessAppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HarnessAppDelegate.h; path = "TestFiles/Debugging Harness/HarnessAppDelegate.h"; sourceTree = "<group>"; };
@@ -235,6 +238,8 @@
 				79A21C4A0F30B735009424B8 /* CTFWhitelistWindowController.h */,
 				69A26D0B0F302C10006648BC /* NSBezierPath-RoundedRectangle.m */,
 				69A26D0A0F302C10006648BC /* NSBezierPath-RoundedRectangle.h */,
+				A3F0159C0FCE5E610048C544 /* CTGradient.m */,
+				A3F0159B0FCE5E610048C544 /* CTGradient.h */,
 				55EB70610E04A8D00016593D /* Info-Plugin.plist */,
 				6953E43A0F3EDEB50014ECF7 /* MenubarMenu.xib */,
 				072189BA0F30D9C3008C8944 /* ContextualMenu.xib */,
@@ -458,6 +463,7 @@
 				8457045A0F47BC170017F3F4 /* CTFUtilities.m in Sources */,
 				79E2EB930F86AAD3005CF170 /* SparkleManager.m in Sources */,
 				0038DE240FC0CCF0007B54E9 /* MATrackingArea.m in Sources */,
+				A3F0159D0FCE5E610048C544 /* CTGradient.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

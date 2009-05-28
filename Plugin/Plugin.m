@@ -32,6 +32,7 @@ THE SOFTWARE.
 #import "CTFUtilities.h"
 #import "CTFWhitelist.h"
 #import "NSBezierPath-RoundedRectangle.h"
+#import "CTGradient.h"
 #import "SparkleManager.h"
 
 #define LOGGING_ENABLED 0
@@ -759,16 +760,28 @@ BOOL usingMATrackingArea = NO;
     }
     else
     {
-        //tweak colors for better compatibility with linearGradientFill
-        startingColor = [NSColor colorWithDeviceWhite:0.633 alpha:0.15];
-        endingColor = [NSColor colorWithDeviceWhite:0.333 alpha:0.15];
-        NSBezierPath *path = [NSBezierPath bezierPath];
-
-        //Draw Gradient
-        [path linearGradientFill:fillRect
-                      startColor:((mouseIsDown && mouseInside) ? endingColor : startingColor)
-                        endColor:((mouseIsDown && mouseInside) ? startingColor : endingColor)];
-        [path stroke];
+		//tweak the opacity of the endingColor for compatibility with CTGradient
+		endingColor = [NSColor colorWithDeviceWhite:0.0 alpha:0.00];
+		
+		gradient = [CTGradient gradientWithBeginningColor:startingColor
+											  endingColor:endingColor];
+		
+		//angle is reversed
+		[gradient fillBezierPath:[NSBezierPath bezierPathWithRect:fillRect] angle:-90.0 - ((mouseIsDown && mouseInside) ? 0.0 : 180.0)];
+		
+		//CTGradient instances are returned autoreleased - no need for explicit release here
+		
+		/*Old Tiger gradient code - remove if CTGradient works out
+		 //tweak colors for better compatibility with linearGradientFill
+		 startingColor = [NSColor colorWithDeviceWhite:0.633 alpha:0.15];
+		 endingColor = [NSColor colorWithDeviceWhite:0.333 alpha:0.15];
+		 NSBezierPath *path = [NSBezierPath bezierPath];
+		 
+		 //Draw Gradient
+		 [path linearGradientFill:fillRect
+		 startColor:((mouseIsDown && mouseInside) ? endingColor : startingColor)
+		 endColor:((mouseIsDown && mouseInside) ? startingColor : endingColor)];
+		 [path stroke];*/
     }
 
     // Draw stroke
