@@ -55,6 +55,8 @@ static NSString *sDrawGearImageOnlyOnMouseOverHiddenPref = @"drawGearImageOnlyOn
 	// Info.plist key for app developers
 static NSString *sCTFOptOutKey = @"ClickToFlashOptOut";
 
+BOOL usingMATrackingArea = NO;
+
 @interface CTFClickToFlashPlugin (Internal)
 - (void) _convertTypesForFlashContainer;
 - (void) _convertTypesForFlashContainerAfterDelay;
