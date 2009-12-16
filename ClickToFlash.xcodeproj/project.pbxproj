@@ -832,6 +832,8 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
 				GCC_PREFIX_HEADER = Plugin/ClickToFlash_Prefix.pch;
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				"GCC_VERSION[arch=i386]" = 4.0;
+				"GCC_VERSION[arch=ppc]" = 4.0;
 				IBC_FLATTEN_NIBS = NO;
 				INFOPLIST_FILE = "Plugin/Info-Plugin.plist";
 				INSTALL_PATH = "$(HOME)/Library/Bundles";
@@ -842,7 +844,6 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = ClickToFlash;
 				RUN_CLANG_STATIC_ANALYZER = NO;
-				SDKROOT = "$(DEVELOPER_SDK_DIR)/MacOSX10.4u.sdk";
 				VALID_ARCHS = "ppc i386 x86_64";
 				WRAPPER_EXTENSION = webplugin;
 				ZERO_LINK = NO;
@@ -862,6 +863,8 @@
 				GCC_MODEL_TUNING = G5;
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
 				GCC_PREFIX_HEADER = "";
+				"GCC_VERSION[arch=i386]" = 4.0;
+				"GCC_VERSION[arch=ppc]" = 4.0;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				INFOPLIST_FILE = "Plugin/Info-Plugin.plist";
 				INSTALL_PATH = "$(HOME)/Library/Bundles";
@@ -871,7 +874,6 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = ClickToFlash;
 				RUN_CLANG_STATIC_ANALYZER = YES;
-				SDKROOT = "$(DEVELOPER_SDK_DIR)/MacOSX10.4u.sdk";
 				VALID_ARCHS = "ppc i386 x86_64";
 				WRAPPER_EXTENSION = webplugin;
 				ZERO_LINK = NO;
