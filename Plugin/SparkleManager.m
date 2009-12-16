@@ -1,39 +1,22 @@
-/*
- 
- The MIT License
- 
- Copyright (c) 2008-2009 Click to Flash Developers
- 
- Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated documentation files (the "Software"), to deal
- in the Software without restriction, including without limitation the rights
- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- copies of the Software, and to permit persons to whom the Software is
- furnished to do so, subject to the following conditions:
- 
- The above copyright notice and this permission notice shall be included in
- all copies or substantial portions of the Software.
- 
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- THE SOFTWARE.
- 
- */
+//
+//  SparkleManager.m
+//  ClickToFlash
+//
+//  Created by Simone Manganelli on 2009-10-27.
+//  Copyright 2009 __MyCompanyName__. All rights reserved.
+//
 
 #import "SparkleManager.h"
-#import <Sparkle/Sparkle.h>
 
-#import "CTFUserDefaultsController.h"
-#import "CTFPreferencesDictionary.h"
-
-#import <objc/runtime.h>
+#ifdef DEBUG
+#define SU_DEFAULT_CHECK_INTERVAL 60
+#else
+#define SU_DEFAULT_CHECK_INTERVAL 60*60*24
+#endif
 
 // NSUserDefaults keys
 static NSString *sAutomaticallyCheckForUpdates = @"checkForUpdatesOnFirstLoad";
+static NSString *sLastUpdateCheck = @"CTFLastUpdateCheck";
 
 @implementation SparkleManager
 
@@ -45,120 +28,120 @@ static NSString *sAutomaticallyCheckForUpdates = @"checkForUpdatesOnFirstLoad";
     return result;
 }
 
-- (id)init {
-    self = [super init];
-    if (self) {
-        _canUpdate = NO;
-    }
-    return self;
-}
-
-- (void)dealloc {
-    [_updater setDelegate:nil];
-    [super dealloc];
-}
-
-- (BOOL)canUpdate {
-    return _canUpdate;
-}
-
-- (SUUpdater*)_updater {
-    if (_updater)
-        return _updater;
-    
-    NSString *frameworksPath = [[NSBundle bundleForClass:[self class]] privateFrameworksPath];
-    NSAssert(frameworksPath, nil);
-    
-    NSString *sparkleFrameworkPath = [NSBundle pathForResource:@"Sparkle" ofType:@"framework" inDirectory:frameworksPath];
-    NSAssert(sparkleFrameworkPath, nil);
-    
-    NSBundle *sparkleFramework = [NSBundle bundleWithPath:sparkleFrameworkPath];
-    NSAssert(sparkleFramework, nil);
-    
-    NSError *error = nil;
-    BOOL loaded;
-    if ([sparkleFramework respondsToSelector:@selector(loadAndReturnError:)]) {
-        loaded = [sparkleFramework loadAndReturnError:&error];
-    } else {
-        loaded = [sparkleFramework load];
-    }
-    if (loaded) {
-        NSBundle *clickToFlashBundle = [NSBundle bundleWithIdentifier:@"com.github.rentzsch.clicktoflash"];
-        NSAssert(clickToFlashBundle, nil);
-        
-        Class updaterClass = objc_getClass("SUUpdater");
-        NSAssert(updaterClass, nil);
-        
-		if ([updaterClass respondsToSelector:@selector(updaterForBundle:)]) {
-			_canUpdate = YES;
-			_updater = [updaterClass updaterForBundle:clickToFlashBundle];
-			NSAssert(_updater, nil);
-			
-			[_updater setDelegate:self];
-		}
-    }
-    
-    if (error) NSLog(@"error loading ClickToFlash's Sparkle: %@", error);
-    
-    return _updater;
-}
-
-- (void)startAutomaticallyCheckingForUpdates {
-    if (![[CTFUserDefaultsController standardUserDefaults] objectForKey:sAutomaticallyCheckForUpdates]) {
-        // If the key isn't set yet, default to YES, automatically check for updates.
-        [[CTFUserDefaultsController standardUserDefaults] setBool:YES forKey:sAutomaticallyCheckForUpdates];
-    }
-    
-	SUUpdater *updater = [self _updater];
-	if ([[CTFUserDefaultsController standardUserDefaults] boolForKey:sAutomaticallyCheckForUpdates]) {
-		if (_canUpdate) {
-			[updater checkForUpdatesInBackground];
-			[updater setAutomaticallyChecksForUpdates:YES];
-		}
-	}
-}
-
-- (void)checkForUpdates {
-    [[self _updater] checkForUpdates:nil];
-}
-
-- (NSString*)pathToRelaunchForUpdater:(SUUpdater*)updater {
-    return _pathToRelaunch;
-}
-
-- (BOOL)updater:(SUUpdater *)updater
-shouldPostponeRelaunchForUpdate:(SUAppcastItem *)update
-  untilInvoking:(NSInvocation *)invocation;
+- (void)dealloc;
 {
-	NSString *appNameString = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleName"];
-	int relaunchResult = NSRunAlertPanel([NSString stringWithFormat:@"Relaunch %@ now?",appNameString],
-										 [NSString stringWithFormat:@"To use the new features of ClickToFlash, %@ needs to be relaunched.",appNameString],
-										 @"Relaunch",
-										 @"Do not relaunch",
-										 nil);
+	if (updaterTimer) [updaterTimer invalidate];
+	[super dealloc];
+}
+
+- (void)activateUpdater:(id)sender inBackground:(BOOL)background;
+{
+	NSString *updaterAppPath = [[[NSBundle bundleForClass:[self class]] resourcePath]
+								stringByAppendingPathComponent:@"ClickToFlash Updater.app"];
+	NSString *updaterExecutablePath = [updaterAppPath stringByAppendingPathComponent:@"Contents/MacOS/ClickToFlash Updater"];
 	
-	BOOL shouldPostpone = YES;
-	if (relaunchResult == NSAlertDefaultReturn) {
-		// we want to relaunch now, so don't postpone the relaunch
-		
-		shouldPostpone = NO;
-	} else {
-		// we want to postpone the relaunch and let the user decide when to do so,
-		// so we don't even bother with saving the invocation and reinvoking
-		// it later
+	/* the following should work, but for some reason it doesn't
+	 NSString *updaterPath = [[NSBundle bundleForClass:[self class]] pathForResource:@"ClickToFlash Updater"
+	 ofType:@"app"];*/
+	
+	
+	NSArray *launchedApps = [[NSWorkspace sharedWorkspace] launchedApplications];
+	BOOL foundUpdater = NO;
+	unsigned int i;
+	for (i = 0; i < [launchedApps count]; i++) {
+		NSString *currentBundleId = [[launchedApps objectAtIndex:i] objectForKey:@"NSApplicationBundleIdentifier"];
+		if ( [currentBundleId isEqualToString:@"com.github.rentzsch.clicktoflash-updater"] ) {
+			foundUpdater = YES;
+			break;
+		}
 	}
-	return shouldPostpone;
+	
+	
+	
+	// the reason to launch via NSTask is because the Sparkle updater needs
+	// to know about the host app so it can relaunch the host app after updating
+	// ClickToFlash
+	
+	// an NSNotification here doesn't work so well because (unless I'm missing
+	// something) we can't know that the updater is launched and ready by the time 
+	// we send the notification, without simply delaying an arbitrary number of
+	// seconds
+	
+	// inter-app communication via NSProxyObjects is inadvisable since there
+	// are likely going to be many ClickToFlash objects available
+	
+	
+	if (! foundUpdater) {
+		NSArray *argsArray;
+		NSString *processID = [[NSNumber numberWithInt:[[NSProcessInfo processInfo] processIdentifier]] stringValue];
+		if (background) {
+			argsArray = [NSArray arrayWithObjects:[CTFClickToFlashPlugin launchedAppBundleIdentifier],
+												  @"--background",
+												  processID,
+												  nil];
+		} else {
+			argsArray = [NSArray arrayWithObjects:[CTFClickToFlashPlugin launchedAppBundleIdentifier],
+												  @"--no-background",
+												  processID,
+												  nil];
+		}
+		
+		// we save our own last update check date instead of relying on Sparkle because
+		// Sparkle's date is saved *after* the check is done, and that can cause multiple
+		// updaters to launch because the old date could be checked by other instances
+		// of the ClickToFlash plug-in (since many instances can be created on load
+		// of a single page)
+
+		[[CTFUserDefaultsController standardUserDefaults] setObject:[NSDate date]
+															 forKey:sLastUpdateCheck];
+		[NSTask launchedTaskWithLaunchPath:updaterExecutablePath
+								 arguments:argsArray];
+	} else {
+		// send a notification to the existing updater to activate itself
+		[[NSDistributedNotificationCenter defaultCenter] postNotificationName:@"CTFSparkleUpdaterShouldActivate"
+																	   object:nil];
+	}
 }
 
-- (NSString *)pathToRelaunch
+- (void)resetUpdaterTimer;
 {
-	return _pathToRelaunch;
+	if (updaterTimer) [updaterTimer invalidate];
+	updaterTimer = [NSTimer scheduledTimerWithTimeInterval:SU_DEFAULT_CHECK_INTERVAL
+													target:self
+												  selector:@selector(automaticallyCheckForUpdates)
+												  userInfo:nil
+												   repeats:YES];
 }
-- (void)setPathToRelaunch:(NSString *)newValue
+
+- (void)automaticallyCheckForUpdates;
 {
-	[newValue retain];
-	[_pathToRelaunch release];
-	_pathToRelaunch = newValue;
+	if ([[CTFUserDefaultsController standardUserDefaults] objectForKey:sAutomaticallyCheckForUpdates]) {
+		NSDate *lastUpdateCheck = [[CTFUserDefaultsController standardUserDefaults] objectForKey:sLastUpdateCheck];
+		if (lastUpdateCheck) {
+			int intervalSinceLastCheck = (int)[[NSDate date] timeIntervalSinceDate:lastUpdateCheck];
+			if (intervalSinceLastCheck >= SU_DEFAULT_CHECK_INTERVAL) {
+				// one day has passed since the last check
+				[self activateUpdater:self inBackground:YES];
+			}
+		} else {
+			// updater has never run, run it now, now, now!
+			[self activateUpdater:self inBackground:YES];
+		}
+	}
+	
+	[self resetUpdaterTimer];
+}
+
+- (void)checkForUpdatesNow;
+{
+	[self activateUpdater:self inBackground:NO];
+	[self resetUpdaterTimer];
+}
+
+- (void)setAutomaticallyChecksForUpdates:(BOOL)autoChecks;
+{
+	[[CTFUserDefaultsController standardUserDefaults] setBool:autoChecks
+													   forKey:sAutomaticallyCheckForUpdates];
 }
 
 @end

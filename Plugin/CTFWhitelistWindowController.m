@@ -1,5 +1,7 @@
 #import "CTFWhitelistWindowController.h"
-#import "SparkleManager.h"
+#import "Plugin.h"
+#import "CTFUtilities.h"
+
 
 NSString *kCTFCheckForUpdates = @"CTFCheckForUpdates";
 
@@ -8,7 +10,7 @@ NSString *kCTFCheckForUpdates = @"CTFCheckForUpdates";
 - (id)init
 {
     NSBundle *myBundle = [NSBundle bundleForClass:[self class]];
-    NSString *nibPath = [myBundle pathForResource:@"WhitelistPanel" ofType:@"nib"];
+    NSString *nibPath = [myBundle pathForResource:@"Preferences" ofType:@"nib"];
     if (nibPath == nil) {
         [self dealloc];
         return nil;
@@ -21,12 +23,17 @@ NSString *kCTFCheckForUpdates = @"CTFCheckForUpdates";
 
 - (void)windowDidLoad
 {
-    [_checkNowButton setEnabled:[[SparkleManager sharedManager] canUpdate]];
+    //[_checkNowButton setEnabled:[[SparkleManager sharedManager] canUpdate]];
 }
 
 - (IBAction)checkForUpdates:(id)sender;
 {
-	[[SparkleManager sharedManager] checkForUpdates];
+	[[SparkleManager sharedManager] checkForUpdatesNow];
+}
+
+- (IBAction)automaticallyCheckForUpdatesDidChange:(id)sender;
+{
+	[[SparkleManager sharedManager] setAutomaticallyChecksForUpdates:[sender state]];
 }
 
 - (NSString *)versionString
@@ -34,6 +41,13 @@ NSString *kCTFCheckForUpdates = @"CTFCheckForUpdates";
 	NSBundle *CTFBundle = [NSBundle bundleWithIdentifier:@"com.github.rentzsch.clicktoflash"];
 	return [CTFBundle objectForInfoDictionaryKey: @"CFBundleShortVersionString"];
 }
+
+- (NSString *)pathToBundle {
+	NSBundle *myBundle = [NSBundle bundleForClass:[self class]];
+	return [myBundle bundlePath];
+}
+
+
 
 - (IBAction)uninstallClickToFlash:(id)sender;
 {
@@ -63,22 +77,24 @@ NSString *kCTFCheckForUpdates = @"CTFCheckForUpdates";
 		contextInfo:(void *)contextInfo;
 {
 	if (returnCode == 1) {
-		NSString *userPluginPath = [@"~/Library/Internet Plug-ins/ClickToFlash.webplugin" stringByExpandingTildeInPath];
+		NSString *userPluginPath = [self pathToBundle];
 		BOOL isDirectory = NO;
 		BOOL userPluginExists = [[NSFileManager defaultManager] fileExistsAtPath:userPluginPath
 																	 isDirectory:&isDirectory];
 		BOOL succeeded = NO;
 		if (userPluginExists && isDirectory) {
-			// we'll move the plugin to the trash, instead of just obstinately
-			// deleting it
+			// we'll move the plugin to the trash, instead of just obstinately deleting it
 			succeeded = [[NSWorkspace sharedWorkspace] performFileOperation:NSWorkspaceRecycleOperation
-																	 source:[@"~/Library/Internet Plug-ins/" stringByExpandingTildeInPath]
+																	 source:[userPluginPath stringByDeletingLastPathComponent]
 																destination:nil
-																	  files:[NSArray arrayWithObject:@"ClickToFlash.webplugin"]
+																	  files:[NSArray arrayWithObject:[userPluginPath lastPathComponent]]
 																		tag:nil];
 		}
 		
 		if (succeeded) {
+			NSString * message = [NSString stringWithFormat:CtFLocalizedString(@"Please quit and relaunch '%@' for the change to take effect.", @"Successful uninstallation Sheet informational message with application name"), [[NSProcessInfo processInfo] processName]];
+			[self setValue:message forKey:@"successInformation"];
+			
 			[NSApp beginSheet:successfulUninstallationSheet
 			   modalForWindow:[self window]
 				modalDelegate:self
@@ -128,5 +144,14 @@ NSString *kCTFCheckForUpdates = @"CTFCheckForUpdates";
 {
 	// nothing to see here!
 }
+
+
+- (IBAction)quitApplication:(id)sender {
+	[successfulUninstallationSheet orderOut:sender];
+	[NSApp endSheet:successfulUninstallationSheet];
+
+	[NSApp performSelectorOnMainThread:@selector(terminate:) withObject:self waitUntilDone:NO];
+}
+
 
 @end

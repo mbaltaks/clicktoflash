@@ -2,7 +2,7 @@
 
 The MIT License
 
-Copyright (c) 2008-2009 Click to Flash Developers
+Copyright (c) 2008-2009 ClickToFlash Developers
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@ THE SOFTWARE.
 
 #import "CTFMenubarMenuController.h"
 #import "CTFWhitelistWindowController.h"
+#import "CTFAboutBoxWindowController.h"
 
 #import "Plugin.h"
 
@@ -38,6 +39,7 @@ NSInteger maxInvisibleDimension = 8;
 static NSString* kApplicationsToInstallMenuInto[] = {
     @"com.apple.Safari",
     @"uk.co.opencommunity.vienna2",
+	@"com.omnigroup.OmniWeb5",
 #if 0
     @"com.panic.Coda", // for debugging an app that includes its own old Sparkle framework.
 #endif
@@ -94,7 +96,9 @@ static NSMenu* appMenu()
 			
 			NSMenuItem* item = [ applicationMenu itemAtIndex: i ];
 			
-			if( [ item action ] == @selector( showPreferences: ) )
+			if( [ item action ] == @selector( showPreferences: )
+			   || [ item action ] == @selector( showPreferencePanel: )
+			   || [ item action ] == @selector( showPreferencesPanel: ) )
 				showPrefsItem = i;
 			
 			if( showPrefsItem >= 0 && [ item isSeparatorItem ] ) {
@@ -136,7 +140,7 @@ static CTFMenubarMenuController* sSingleton = nil;
 	
 	if( self ) {
 		if( ! [ NSBundle loadNibNamed: @"MenubarMenu" owner: self ] )
-			NSLog( @"ClickToFlash: Could not load menubar menu nib" );
+			NSLog( @"ClickToFlashMenuBarMenuController -init: Could not load menubar menu nib" );
 		
 		_views = NSCreateHashTable( NSNonRetainedObjectHashCallBacks, 0 );
 	}
@@ -148,6 +152,7 @@ static CTFMenubarMenuController* sSingleton = nil;
 - (void) dealloc
 {
 	[ _whitelistWindowController release ];
+	[ _aboutBoxWindowController release ];
     NSFreeHashTable( _views );
 	
 	[ super dealloc ];
@@ -160,7 +165,7 @@ static CTFMenubarMenuController* sSingleton = nil;
         return;
     
 	if( !menu ) {
-		NSLog( @"ClickToFlash: Could not load menubar menu" );
+		NSLog( @"ClickToFlashMenubarMenuController -awakeFromNib: Could not load menubar menu" );
 		return;
 	}
 	
@@ -173,7 +178,7 @@ static CTFMenubarMenuController* sSingleton = nil;
 	NSMenu* applicationMenu = appMenu();
 	
 	if ( ( insertLocation < 0 ) || ( insertLocation > [ applicationMenu numberOfItems ] ) ) {
-		NSLog( @"ClickToFlash: Could not insert menu at location %i", insertLocation );
+		NSLog( @"ClickToFlashMenubarMenuController -awakeFromNib: Could not insert menu at location %i", insertLocation );
 		return;
 	}
     
@@ -252,6 +257,23 @@ static CTFMenubarMenuController* sSingleton = nil;
 	return [ self _flashViewExistsForKeyWindowWithInvisibleOnly: YES ];
 }
 
+- (BOOL) multipleFlashViewsExistForWindow: (NSWindow*) window
+{
+	int count = 0;
+	
+	NSHashEnumerator enumerator = NSEnumerateHashTable( _views );
+	CTFClickToFlashPlugin* item;
+	
+	while( ( item = NSNextHashEnumeratorItem( &enumerator ) ) ) {
+		if( [ item window ] == window ) {
+			count++;
+		}
+	}
+	NSEndHashTableEnumeration( &enumerator );
+	
+	return (count > 1);
+}
+
 - (BOOL) validateMenuItem: (NSMenuItem*) item
 {
 	if ( [ item action ] == @selector( loadAllFlash: ) ) {
@@ -315,5 +337,15 @@ static CTFMenubarMenuController* sSingleton = nil;
 	
 	[ _whitelistWindowController showWindow: sender ];
 }
+
+
+- (IBAction) showAboutBox: (id) sender
+{
+	if( _aboutBoxWindowController == nil )
+		_aboutBoxWindowController = [ [ CTFAboutBoxWindowController alloc ] init ];
+	
+	[ _aboutBoxWindowController showWindow: sender ];
+}
+
 
 @end

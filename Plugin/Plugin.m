@@ -2,7 +2,7 @@
 
 The MIT License
 
-Copyright (c) 2008-2009 Click to Flash Developers
+Copyright (c) 2008-2009 ClickToFlash Developers
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,67 +27,64 @@ THE SOFTWARE.
 #import "Plugin.h"
 #import "CTFUserDefaultsController.h"
 #import "CTFPreferencesDictionary.h"
-#import "CTFURLConnection.h"
-
-#import "MATrackingArea.h"
 #import "CTFMenubarMenuController.h"
-#import "CTFsIFRSupport.h"
 #import "CTFUtilities.h"
 #import "CTFWhitelist.h"
-#import "NSBezierPath-RoundedRectangle.h"
-#import "CTGradient.h"
-#import "SparkleManager.h"
+#import "CTFGradient.h"
+#import "CTFKiller.h"
+#import "CTFKillerVideo.h"
+#import "CTFKillerSIFR.h"
+#import "CTFLoader.h"
+#import "CTFActionButton.h"
+#import "CTFMainButton.h"
+#import "CTFButtonsView.h"
+#import "CTFFullScreenWindow.h"
 
-#define LOGGING_ENABLED 0
+#import <Carbon/Carbon.h>
 
-    // MIME types
+// MIME types
 static NSString *sFlashOldMIMEType = @"application/x-shockwave-flash";
 static NSString *sFlashNewMIMEType = @"application/futuresplash";
 
-    // CTFUserDefaultsController keys
-static NSString *sUseYouTubeH264DefaultsKey = @"useYouTubeH264";
-static NSString *sUseYouTubeHDH264DefaultsKey = @"useYouTubeHDH264";
-static NSString *sAutoLoadInvisibleFlashViewsKey = @"autoLoadInvisibleViews";
-static NSString *sPluginEnabled = @"pluginEnabled";
+// CTFUserDefaultsController keys
+static NSString *sAutoLoadInvisibleFlashViewsDefaultsKey = @"autoLoadInvisibleViews";
+static NSString *sPluginEnabledDefaultsKey = @"pluginEnabled";
 static NSString *sApplicationWhitelist = @"applicationWhitelist";
-static NSString *sDrawGearImageOnlyOnMouseOverHiddenPref = @"drawGearImageOnlyOnMouseOver";
+static NSString *sUseNewStyleUIDefaultsKey =@"use new style UI";
+// static NSString *sDrawGearImageOnlyOnMouseOverHiddenPref = @"drawGearImageOnlyOnMouseOver";
 
-	// Info.plist key for app developers
+// Info.plist key for app developers
 static NSString *sCTFOptOutKey = @"ClickToFlashOptOut";
 
-BOOL usingMATrackingArea = NO;
+#define CTFDefaultWhitelist [NSArray arrayWithObjects:\
+@"com.apple.frontrow",\
+@"com.apple.dashboard.client",\
+@"com.apple.ScreenSaver.Engine",\
+@"com.hulu.HuluDesktop",\
+@"com.riverfold.WiiTransfer",\
+@"com.bitcartel.pandorajam",\
+@"com.adobe.flexbuilder",\
+@"com.Zattoo.prefs",\
+@"fr.understudy.HuluPlayer",\
+@"com.apple.iWeb",\
+@"com.realmacsoftware.rapidweaverpro",\
+@"com.realmacsoftware.littlesnapper",\
+nil]
+
+
 
 @interface CTFClickToFlashPlugin (Internal)
 - (void) _convertTypesForFlashContainer;
 - (void) _convertTypesForFlashContainerAfterDelay;
-- (void) _convertToMP4Container;
-- (void) _convertToMP4ContainerAfterDelay;
-- (void) _prepareForConversion;
-- (void) _revertToOriginalOpacityAttributes;
 
 - (void) _drawBackground;
 - (BOOL) _isOptionPressed;
-- (void) _checkMouseLocation;
-- (void) _addTrackingAreaForCTF;
-- (void) _removeTrackingAreaForCTF;
+- (BOOL) _isCommandPressed;
 
 - (void) _loadContent: (NSNotification*) notification;
 - (void) _loadContentForWindow: (NSNotification*) notification;
-
-- (NSDictionary*) _flashVarDictionary: (NSString*) flashvarString;
-- (NSDictionary*) _flashVarDictionaryFromYouTubePageHTML: (NSString*) youTubePageHTML;
-- (NSString*) flashvarWithName: (NSString*) argName;
-- (void) _checkForH264VideoVariants;
-- (BOOL) _hasH264Version;
-- (BOOL) _useH264Version;
-- (BOOL) _hasHDH264Version;
-- (BOOL) _useHDH264Version;
-- (NSString *)launchedAppBundleIdentifier;
 @end
 
-
-#pragma mark -
-#pragma mark Whitelist Utility Functions
 
 
 @implementation CTFClickToFlashPlugin
@@ -96,10 +93,58 @@ BOOL usingMATrackingArea = NO;
 #pragma mark -
 #pragma mark Class Methods
 
-+ (NSView *)plugInViewWithArguments:(NSDictionary *)arguments
-{
++ (NSView *)plugInViewWithArguments:(NSDictionary *)arguments {
     return [[[self alloc] initWithArguments:arguments] autorelease];
 }
+
+
+
+#define CTFInitialDefault( initialValue, defaultName, bla) \
+if ( [[CTFUserDefaultsController standardUserDefaults] objectForKey: defaultName] == nil ) { \
+[[CTFUserDefaultsController standardUserDefaults] setObject: initialValue forKey: defaultName]; \
+}
+
+
++ (void) initialize {
+	[CTFClickToFlashPlugin _migratePrefsToExternalFile];
+	[CTFClickToFlashPlugin _migrateWhitelist];
+	[CTFClickToFlashPlugin _uniquePrefsFileWhitelist];
+	[CTFClickToFlashPlugin _addApplicationWhitelistArrayToPrefsFile];
+	[CTFKillerSIFR migrateDefaults];
+	
+	// set up initial defaults
+	// be enabled
+	CTFInitialDefault( [NSNumber numberWithBool: YES], sPluginEnabledDefaultsKey, )
+	// do not automatically load smaill Flash views
+	CTFInitialDefault( [NSNumber numberWithBool: NO], sAutoLoadInvisibleFlashViewsDefaultsKey, )
+	// use 'new style' UI if possible
+	CTFInitialDefault( [NSNumber numberWithBool: YES], sUseNewStyleUIDefaultsKey, )
+
+	// for CTFKillerVideo
+	// use non-Flash video if possible
+	CTFInitialDefault( [NSNumber numberWithBool: YES], sUseYouTubeH264DefaultsKey, )
+	// use HD video if possible
+	CTFInitialDefault( [NSNumber numberWithBool: NO], sUseYouTubeHDH264DefaultsKey, )
+	// use HTML5 video element or QuickTime plug-in?
+	CTFInitialDefault( [NSNumber numberWithBool: NO], sDisableVideoElementDefaultsKey, )
+	// start playback of videos automatically
+	CTFInitialDefault( [NSNumber numberWithBool: YES], sYouTubeAutoPlayDefaultsKey, )
+									  
+	// for QTKit usage in CTFKillerVideo
+	// use QTKit
+	CTFInitialDefault( [NSNumber numberWithBool: YES], sUseQTKitDefaultsKey, )
+	// default volume level when using QTKit for playback
+	CTFInitialDefault( [NSNumber numberWithFloat: 1.0], sVideoVolumeLevelDefaultsKey, )
+									  
+	// for CTFKillerSIFR
+	// automatically handle SiFR?
+	CTFInitialDefault( [NSNumber numberWithBool: YES], sSifrAutoHandleDefaultsKey, )
+	// automatically remove SiFR (and use normal text instead)?
+	CTFInitialDefault( [NSNumber numberWithBool: NO], sSifrDeSifrDefaultsKey, )
+}
+
+
+
 
 
 #pragma mark -
@@ -110,40 +155,13 @@ BOOL usingMATrackingArea = NO;
 {
     self = [super init];
     if (self) {
-		defaultWhitelist = [NSArray arrayWithObjects:	@"com.apple.frontrow",
-														@"com.apple.dashboard.client",
-														@"com.apple.ScreenSaver.Engine",
-														@"com.hulu.HuluDesktop",
-														@"com.riverfold.WiiTransfer",
-														@"com.bitcartel.pandorajam",
-														@"com.adobe.flexbuilder",
-														@"com.Zattoo.prefs",
-							nil];
-		
-		SparkleManager *sharedSparkleManager = [SparkleManager sharedManager];
-		NSWorkspace *sharedWorkspace = [NSWorkspace sharedWorkspace];
-		NSString *pathToRelaunch = [sharedWorkspace absolutePathForAppBundleWithIdentifier:[self launchedAppBundleIdentifier]];
-		[sharedSparkleManager setPathToRelaunch:pathToRelaunch];
-        [sharedSparkleManager startAutomaticallyCheckingForUpdates];
-        if (![[CTFUserDefaultsController standardUserDefaults] objectForKey:sAutoLoadInvisibleFlashViewsKey]) {
-            //  Default to auto-loading invisible flash views.
-            [[CTFUserDefaultsController standardUserDefaults] setBool:YES forKey:sAutoLoadInvisibleFlashViewsKey];
-        }
-		if (![[CTFUserDefaultsController standardUserDefaults] objectForKey:sPluginEnabled]) {
-			// Default to enable the plugin
-			[[CTFUserDefaultsController standardUserDefaults] setBool:YES forKey:sPluginEnabled];
-		}
-		[self setLaunchedAppBundleIdentifier:[self launchedAppBundleIdentifier]];
+		isConverted = NO;
+		_sparkleUpdateInProgress = NO;
 		
 		[self setWebView:[[[arguments objectForKey:WebPlugInContainerKey] webFrame] webView]];
 		
         [self setContainer:[arguments objectForKey:WebPlugInContainingElementKey]];
         
-        [self _migrateWhitelist];
-		[self _migratePrefsToExternalFile];
-		[self _addApplicationWhitelistArrayToPrefsFile];
-        
-		
         // Get URL
         
         NSURL *base = [arguments objectForKey:WebPlugInBaseURLKey];
@@ -163,120 +181,85 @@ BOOL usingMATrackingArea = NO;
 		
 		// set tooltip
 		
-		if ([self src]) [self setToolTip:[self src]];
+		if ([self src]) {
+			int srcLength = [[self src] length];
+			if ([[self src] length] > 200) {
+				NSString *srcStart = [[self src] substringToIndex:150];
+				NSString *srcEnd = [[self src] substringFromIndex:(srcLength-50)];
+				NSString *shortenedSrc = [NSString stringWithFormat:@"%@…%@",srcStart,srcEnd];
+				[self setToolTip:shortenedSrc];
+			} else {
+				[self setToolTip:[self src]];
+			}
+		}
 		
         
-        // Read in flashvars (needed to determine YouTube videos)
+        // Read in flashvars
         
         NSString* flashvars = [[self attributes] objectForKey: @"flashvars" ];
         if( flashvars != nil )
-            _flashVars = [ [ self _flashVarDictionary: flashvars ] retain ];
-		
-		// check whether it's from YouTube and get the video_id
-		
-        _fromYouTube = [[self host] isEqualToString:@"www.youtube.com"]
-		|| ( flashvars != nil && [flashvars rangeOfString: @"www.youtube.com"].location != NSNotFound )
-		|| ([self src] != nil && [[self src] rangeOfString: @"youtube.com"].location != NSNotFound );
-		
-        if (_fromYouTube) {
-			NSString *videoId = [ self flashvarWithName: @"video_id" ];
-			if (videoId != nil) {
-				[self setVideoId:videoId];
-			} else {
-				// it's an embedded YouTube flash view; scrub the URL to
-				// determine the video_id, then get the source of the YouTube
-				// page to get the Flash vars
-				
-				NSString *videoIdFromURL = nil;
-				NSScanner *URLScanner = [[NSScanner alloc] initWithString:[self src]];
-				[URLScanner scanUpToString:@"youtube.com/v/" intoString:nil];
-				if ([URLScanner scanString:@"youtube.com/v/" intoString:nil]) {
-					// URL is in required format, next characters are the id
-					
-					[URLScanner scanUpToString:@"&" intoString:&videoIdFromURL];
-					if (videoIdFromURL) [self setVideoId:videoIdFromURL];
-				}
-				[URLScanner release];
-				
-				if (videoIdFromURL) {
-					NSString *URLString = [NSString stringWithFormat:@"http://youtube.com/watch?v=%@",videoIdFromURL];
-					NSURL *YouTubePageURL = [NSURL URLWithString:URLString];
-					NSError *pageSourceError = nil;
-					NSString *pageSourceString = [NSString stringWithContentsOfURL:YouTubePageURL
-																	  usedEncoding:nil
-																			 error:&pageSourceError];
-					if (! pageSourceError) _flashVars = [[self _flashVarDictionaryFromYouTubePageHTML:pageSourceString] retain];
-				}
-			}
-			
-			[self _checkForH264VideoVariants];
-		}
+            _flashVars = [ [ CTFClickToFlashPlugin flashVarDictionary: flashvars ] retain ];
 		
 		
-#if LOGGING_ENABLED
-        NSLog( @"arguments = %@", arguments );
-        NSLog( @"flashvars = %@", _flashVars );
+		// Set up the CTFKiller subclass, if appropriate.
+		[self setKiller: [CTFKiller killerForURL:[NSURL URLWithString:[self baseURL]] src:[self src] attributes:[self attributes] forPlugin:self]];
+		
+		
+#if LOGGING_ENABLED > 1
+		NSLog( @"ClickToFlash Plugin arguments = %@", arguments );
+		NSLog( @"ClickToFlash Plugin flashvars = %@", _flashVars );
 #endif
 		
 		
 		// check whether plugin is disabled, load all content as normal if so
 		
 		CTFUserDefaultsController *standardUserDefaults = [CTFUserDefaultsController standardUserDefaults];
-		BOOL pluginEnabled = [standardUserDefaults boolForKey:sPluginEnabled ];
+		BOOL pluginEnabled = [standardUserDefaults boolForKey:sPluginEnabledDefaultsKey ];
 		NSString *hostAppBundleID = [[NSBundle mainBundle] bundleIdentifier];
-		BOOL hostAppIsInDefaultWhitelist = [defaultWhitelist containsObject:hostAppBundleID];
+		BOOL hostAppIsInDefaultWhitelist = [CTFDefaultWhitelist containsObject:hostAppBundleID];
 		BOOL hostAppIsInUserWhitelist = [[standardUserDefaults arrayForKey:sApplicationWhitelist] containsObject:hostAppBundleID];
 		BOOL hostAppWhitelistedInInfoPlist = NO;
 		if ([[[NSBundle mainBundle] infoDictionary] objectForKey:sCTFOptOutKey]) hostAppWhitelistedInInfoPlist = YES;
 		if ( (! pluginEnabled) || (hostAppIsInDefaultWhitelist || hostAppIsInUserWhitelist || hostAppWhitelistedInInfoPlist) ) {
             _isLoadingFromWhitelist = YES;
-			[self _convertTypesForContainer];
+			[self convertTypesForContainer:NO];
 			return self;
 		}		
 		
+		// Plugin is enabled and the host is not white-listed. Kick off Sparkle.
+		
+		/*NSString *pathToRelaunch = [[NSWorkspace sharedWorkspace] absolutePathForAppBundleWithIdentifier:[CTFClickToFlashPlugin launchedAppBundleIdentifier]];
+		[[SparkleManager sharedManager] setPathToRelaunch:pathToRelaunch];
+		[[SparkleManager sharedManager] startAutomaticallyCheckingForUpdates];*/
 		
         // Set up main menus
         
 		[ CTFMenubarMenuController sharedController ];	// trigger the menu items to be added
+
 		
-        
-        // Check for sIFR
-        
-        if ([self _isSIFRText: arguments]) {
-            _badgeText = NSLocalizedString(@"sIFR Flash", @"sIFR Flash badge text");
-            
-            if ([self _shouldAutoLoadSIFR]) {
-				_isLoadingFromWhitelist = YES;
-				[self _convertTypesForContainer];
-				return self;
-			}
-            else if ([self _shouldDeSIFR]) {
-				_isLoadingFromWhitelist = YES;
-                [self performSelector:@selector(_disableSIFR) withObject:nil afterDelay:0];
-				return self;
-			}
-        }
+		// Create our subviews. These need to be in place before any conversion occurs as the CTFKillers invoked by conversion may be using them.
 		
-		if ( [ [ CTFUserDefaultsController standardUserDefaults ] boolForKey: sAutoLoadInvisibleFlashViewsKey ]
+		[self setupSubviews];
+
+		
+		// Automatically load small/invisible Flash elements if so desired.
+		
+		if ( [ [ CTFUserDefaultsController standardUserDefaults ] boolForKey: sAutoLoadInvisibleFlashViewsDefaultsKey ]
 			&& [ self isConsideredInvisible ] ) {
 			// auto-loading is on and this view meets the size constraints
             _isLoadingFromWhitelist = YES;
-			[self _convertTypesForContainer];
+			[self convertTypesForContainer:YES];
 			return self;
 		}
 		
-        BOOL loadFromWhiteList = [self _isHostWhitelisted];
 		
+		BOOL loadFromWhiteList = [self _isHostWhitelisted];
 		
 		// Check the SWF src URL itself against the whitelist (allows embbeded videos from whitelisted sites to play, e.g. YouTube)
 		
-		if( !loadFromWhiteList )
-		{
+		if( !loadFromWhiteList ) {
             if (srcAttribute) {
-                NSURL* swfSrc = [NSURL URLWithString:srcAttribute];
-                
-                if( [self _isWhiteListedForHostString:[swfSrc host] ] )
-                {
+				if( [self _isWhiteListedForHostString:srcAttribute ] ) {
                     loadFromWhiteList = YES;
                 }
             }
@@ -287,7 +270,8 @@ BOOL usingMATrackingArea = NO;
         
         if(loadFromWhiteList && ![self _isOptionPressed]) {
             _isLoadingFromWhitelist = YES;
-			[self _convertTypesForContainer];
+			[self convertTypesForContainer:YES];
+
 			return self;
         }
 		
@@ -363,187 +347,140 @@ BOOL usingMATrackingArea = NO;
 		}
 		
 		[self setOriginalOpacityAttributes:originalOpacityDict];
-
-		[self _checkMouseLocation];
-        [self _addTrackingAreaForCTF];
-    }
-
+		[self setFrameSize:NSMakeSize(1., 1.)];
+		
+		[self setFullScreenWindow: nil];
+	}
+		
     return self;
 }
 
-- (void) dealloc
-{
-    [self _removeTrackingAreaForCTF];
-    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+
+
+/*
+ Set up the subviews we are using. They are structured as follows:
+ 
+ self (CTFClickToFlashPlugin)
+ -> containerView (NSView)
+    -> mainButton (CTFMainButton)
+	-> buttonsContainer (NSView)
+	   -> actionButton (CTFActionButton)
+       -> buttonsView (CTFButtonsView) - new style display only
+          -> array of buttons (CTFButton) added as needed by CTFKiller classes
+ 
+ This setup can be changed by CTFKillers, e.g. CTFVideoKiller hides the mainButton when clicked and adds a QTMovieView.
+ The layout is made in a way that also supports zooming to full screen (used in 'new style' UI only).
+ In the 'new style' UI, set these views up with layers, so they draw properly above a playing movie.
+*/
+- (void) setupSubviews {
+	// Add a full size subview which will contain everything. We need this so we can move it to full-screen without removing the plug-in from the web page.
+	NSView * myContainerView = [[[NSView alloc] initWithFrame: [self bounds]] autorelease];
+	[myContainerView setAutoresizingMask: (NSViewHeightSizable | NSViewWidthSizable) ];
+	[self addSubview: myContainerView];
+	[self setContainerView: myContainerView];
+		
+	// Add main control button, covering the full view. This does the main drawing.
+	CTFMainButton * myMainButton = [[[CTFMainButton alloc] initWithFrame: [self bounds]] autorelease];
+	[myMainButton setTag: CTFMainButtonTag];
+	[myMainButton setAutoresizingMask: (NSViewHeightSizable | NSViewWidthSizable) ];
+	[myMainButton setButtonType: NSMomentaryPushInButton];
+	[myMainButton setTarget: self];
+	[myMainButton setAction: @selector(clicked:)];
+	[myMainButton setPlugin: self];
+	[myContainerView addSubview: myMainButton];
+	[self setMainButton: myMainButton];
 	
+	// Add view containing all of the buttons
+	NSView * theButtonsContainer = [[[NSView alloc] initWithFrame:[self bounds]] autorelease];
+	[theButtonsContainer setAutoresizingMask: (NSViewHeightSizable | NSViewWidthSizable) ];
+	[myContainerView addSubview: theButtonsContainer];
+	[self setButtonsContainer: theButtonsContainer];
+	
+		// Add action button control
+	CTFActionButton * theActionButton = [CTFActionButton actionButton];
+	[theActionButton setTag: CTFActionButtonTag];
+	[theActionButton setPlugin: self];
+	[theActionButton setAutoresizingMask: (NSViewMaxXMargin | NSViewMinYMargin) ];
+	[theButtonsContainer addSubview: theActionButton];
+	[self setActionButton: theActionButton];
+
+	// attempt to construct a key loop: Plugin -> main button -> actionButton -> buttonsView -> Plugin. Is this the right philosophy?
+	[self setNextKeyView: myMainButton];
+	[myMainButton setNextKeyView: theActionButton];
+	[theActionButton setNextKeyView: self];
+	
+	
+	// the new style UI also adds buttons at the right hand side of the container and displays QuickTime itself.
+	if ( [self useNewStyleUI] ) {
+		// Add view for additional buttons (proper sizing is done by view itself)
+		CTFButtonsView * theButtonsView = [[[CTFButtonsView alloc] initWithFrame: NSZeroRect] autorelease];
+		[theButtonsView setAutoresizingMask: NSViewWidthSizable];
+		[theButtonsContainer addSubview: theButtonsView];
+		[self setButtonsView: theButtonsView];
+		
+		// adapt key loop to contain the buttons view
+		[theActionButton setNextKeyView: buttonsView];
+		[buttonsView setNextKeyView: self];
+		
+		// Our views need layers in case we are using QuickTime so they won't become erased.
+		[myMainButton setWantsLayer: YES];
+		[theButtonsContainer setWantsLayer: YES];
+		[theActionButton setWantsLayer: YES];
+		[theButtonsView setWantsLayer: YES];
+		[myContainerView setWantsLayer: YES];
+	}
+}
+
+
+
+- (void)webPlugInDestroy {
+	[NSObject cancelPreviousPerformRequestsWithTarget:self];
+	
+	[[self killer] pluginDestroy];
+	[self exitFullScreen: self];
 	[self _abortAlert];        // to be on the safe side
 	
 	// notify that this ClickToFlash plugin is going away
-	[[CTFMenubarMenuController sharedController] unregisterView: self];
-    
-    [self setContainer:nil];
-    [self setHost:nil];
-    [self setWebView:nil];
-    [self setBaseURL:nil];
-    [self setAttributes:nil];
-    
-    [_flashVars release];
-    [_badgeText release];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver: self];
+	[[CTFMenubarMenuController sharedController] unregisterView:self];
+	
+	[self setContainer:nil];
+	[self setHost:nil];
+	[self setWebView:nil];
+	[self setBaseURL:nil];
+	[self setSrc:nil];
+	[self setAttributes:nil];
+	[self setOriginalOpacityAttributes:nil];
+	[self setKiller:nil];
+	[self setContainerView:nil];
+	[self setMainButton:nil];
+	[self setButtonsContainer:nil];
+	[self setActionButton:nil];
+	[self setButtonsView:nil];
+	[self setFullScreenWindow:nil];
+	[self setPreviewURL:nil];
+	[self setPreviewImage:nil];
+	
+	[_flashVars release];
+	_flashVars = nil;
+
+	[[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+
+
+- (void) dealloc {
+	// Just in case...
+	[self webPlugInDestroy];
+	
 #if LOGGING_ENABLED
-	NSLog(@"ClickToFlash:\tdealloc");
+	NSLog(@"ClickToFlash Plugin: -dealloc");
 #endif
 	
     [super dealloc];
 }
 
-- (void) _migratePrefsToExternalFile
-{
-	NSArray *parasiticDefaultsNameArray = [NSArray arrayWithObjects:@"ClickToFlash_pluginEnabled",
-										   @"ClickToFlash_useYouTubeH264",
-										   @"ClickToFlash_autoLoadInvisibleViews",
-										   @"ClickToFlash_sifrMode",
-										   @"ClickToFlash_checkForUpdatesOnFirstLoad",
-										   @"ClickToFlash_siteInfo",
-										   nil];
-	
-	NSArray *externalDefaultsNameArray = [NSArray arrayWithObjects:@"pluginEnabled",
-										  @"useYouTubeH264",
-										  @"autoLoadInvisibleViews",
-										  @"sifrMode",
-										  @"checkForUpdatesOnFirstLoad",
-										  @"siteInfo",
-										  nil];
-	
-	NSMutableDictionary *externalFileDefaults = [[CTFUserDefaultsController standardUserDefaults] dictionaryRepresentation];
 
-	[[NSUserDefaults standardUserDefaults] addSuiteNamed:@"com.github.rentzsch.clicktoflash"];
-	unsigned int i;
-	for (i = 0; i < [parasiticDefaultsNameArray count]; i++) {
-		NSString *currentParasiticDefault = [parasiticDefaultsNameArray objectAtIndex:i];
-		id prefValue = [[NSUserDefaults standardUserDefaults] objectForKey:currentParasiticDefault];
-		if (prefValue) {
-			NSString *externalPrefDefaultName = [externalDefaultsNameArray objectAtIndex:i];
-			id existingExternalPref = [[CTFUserDefaultsController standardUserDefaults] objectForKey:externalPrefDefaultName];
-			if (! existingExternalPref) {
-				// don't overwrite existing external preferences
-				[externalFileDefaults setObject:prefValue forKey:externalPrefDefaultName];
-			} else {
-				if ([currentParasiticDefault isEqualToString:@"ClickToFlash_siteInfo"]) {
-					// merge the arrays of whitelisted sites, in case they're not identical
-					
-					NSMutableArray *combinedWhitelist = [NSMutableArray arrayWithArray:prefValue];
-					[combinedWhitelist addObjectsFromArray:existingExternalPref];
-					[externalFileDefaults setObject:combinedWhitelist forKey:externalPrefDefaultName];
-				}
-			}
-			// eliminate the parasitic default, regardless of whether we transferred them or not
-			[[NSUserDefaults standardUserDefaults] removeObjectForKey:currentParasiticDefault];
-		}
-	}
-	[[NSUserDefaults standardUserDefaults] removeSuiteNamed:@"com.github.rentzsch.clicktoflash"];
-}
-
-- (void) _addApplicationWhitelistArrayToPrefsFile
-{
-	CTFUserDefaultsController *standardUserDefaults = [CTFUserDefaultsController standardUserDefaults];
-	NSArray *applicationWhitelist = [standardUserDefaults arrayForKey:sApplicationWhitelist];
-	if (! applicationWhitelist) {
-		// add an empty array to the plist file so people know exactly where to
-		// whitelist apps
-		
-		[standardUserDefaults setObject:[NSArray array] forKey:sApplicationWhitelist];
-	}
-}
-
-- (void) drawRect:(NSRect)rect
-{
-	if(!_isLoadingFromWhitelist)
-		[self _drawBackground];
-}
-
-- (BOOL) _gearVisible
-{
-	NSRect bounds = [ self bounds ];
-	return NSWidth( bounds ) > 32 && NSHeight( bounds ) > 32;
-}
-
-- (void) mouseDown:(NSEvent *)event
-{
-	float margin = 5.0;
-	float gearImageHeight = 16.0;
-	float gearImageWidth = 16.0;
-	
-	BOOL xCoordWithinGearImage = NO;
-	BOOL yCoordWithinGearImage = NO;
-	
-	// if the view is 32 pixels or smaller in either direction,
-	// the gear image is not drawn, so we shouldn't pop-up the contextual
-	// menu on a single-click either
-	if ( [ self _gearVisible ] ) {
-        float viewHeight = NSHeight( [ self bounds ] );
-		NSPoint mouseLocation = [event locationInWindow];
-		NSPoint localMouseLocation = [self convertPoint:mouseLocation fromView:nil];
-		
-		xCoordWithinGearImage = ( (localMouseLocation.x >= (0 + margin)) &&
-								 (localMouseLocation.x <= (0 + margin + gearImageWidth)) );
-		
-		yCoordWithinGearImage = ( (localMouseLocation.y >= (viewHeight - margin - gearImageHeight)) &&
-								 (localMouseLocation.y <= (viewHeight - margin)) );
-	}
-	
-	if (xCoordWithinGearImage && yCoordWithinGearImage) {
-		[NSMenu popUpContextMenu:[self menuForEvent:event] withEvent:event forView:self];
-	} else {
-		mouseIsDown = YES;
-		mouseInside = YES;
-		[self setNeedsDisplay:YES];
-
-		// Track the mouse so that we can undo our pressed-in look if the user drags the mouse outside the view, and reinstate it if the user drags it back in.
-        //[self _addTrackingAreaForCTF];
-            // Now that we track the mouse for mouse-over when the mouse is up 
-            // for drawing the gear only on mouse-over, we don't need to add it here.
-	}
-}
-
-- (void) mouseEntered:(NSEvent *)event
-{
-    mouseInside = YES;
-    [self setNeedsDisplay:YES];
-}
-- (void) mouseExited:(NSEvent *)event
-{
-    mouseInside = NO;
-    [self setNeedsDisplay:YES];
-}
-
-- (void) mouseUp:(NSEvent *)event
-{
-    mouseIsDown = NO;
-    // Display immediately because we don't want to end up drawing after we've swapped in the Flash movie.
-    [self display];
-    
-    // We're done tracking.
-    //[self _removeTrackingAreaForCTF];
-        // Now that we track the mouse for mouse-over when the mouse is up 
-        // for drawing the gear only on mouse-over, we don't remove it here.
-    
-    if (mouseInside) {
-        if ([self _isOptionPressed] && ![self _isHostWhitelisted]) {
-            [self _askToAddCurrentSiteToWhitelist];
-        } else {
-            [self _convertTypesForContainer];
-        }
-    }
-}
-
-- (BOOL) _isOptionPressed
-{
-    BOOL isOptionPressed = (([[NSApp currentEvent] modifierFlags] & NSAlternateKeyMask) != 0);
-    return isOptionPressed;
-}
-
+ 
 - (BOOL) isConsideredInvisible
 {
 	int height = (int)([[self webView] frame].size.height);
@@ -573,74 +510,134 @@ BOOL usingMATrackingArea = NO;
 	return NO;
 }
 
+
+
+- (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize {
+//	NSLog(@"ClickToFlash Plugin -resizeSubviewsWithOldSize:");
+	[super resizeSubviewsWithOldSize: oldBoundsSize];
+	if ([self killer]) {
+		[killer pluginResized];
+	}
+}
+
+
+
+
+
+
 #pragma mark -
 #pragma mark Contextual menu
 
-- (NSMenu*) menuForEvent: (NSEvent*) event
-{
-    // Set up contextual menu
-    
-    if( ![ self menu ] ) {
-        if (![NSBundle loadNibNamed:@"ContextualMenu" owner:self]) {
-            NSLog(@"Could not load contextual menu plugin");
-        }
-        else {
-            if ([self _hasH264Version]) {
-                [[self menu] insertItemWithTitle: NSLocalizedString( @"Load H.264", "Load H.264 context menu item" )
-                                          action: @selector( loadH264: ) keyEquivalent: @"" atIndex: 1];
-				[[self menu] insertItemWithTitle: NSLocalizedString( @"Download H.264", "Download H.264 menu item" )
-										  action: @selector( downloadH264: ) keyEquivalent: @"" atIndex: 2];
-				[[self menu] insertItemWithTitle: NSLocalizedString( @"Play Fullscreen in QuickTime Player", "Open Fullscreen in QT Player menu item" )
-										  action: @selector( openFullscreenInQTPlayer: ) keyEquivalent: @"" atIndex: 3];
-                [[[self menu] itemAtIndex: 1] setTarget: self];
-				[[[self menu] itemAtIndex: 2] setTarget: self];
-				[[[self menu] itemAtIndex: 3] setTarget: self];
-            } else if (_fromYouTube) {
-				// has no H.264 version but is from YouTube; it's an embedded view!
-				
-				[[self menu] insertItemWithTitle: NSLocalizedString ( @"Load YouTube.com page for this video", "Load YouTube page menu item" )
-										  action: @selector (loadYouTubePage: ) keyEquivalent: @"" atIndex: 1];
-				[[[self menu] itemAtIndex: 1] setTarget: self];
-			}
-        }
-    }
-    
+- (NSMenuItem *) addContextualMenuItemWithTitle: (NSString*) title action: (SEL) selector {
+	return [self addContextualMenuItemWithTitle: title action: selector target: self];
+}
+
+
+- (NSMenuItem *) addContextualMenuItemWithTitle: (NSString*) title action: (SEL) selector target:(id) target {
+	NSMenuItem * menuItem = [[[NSMenuItem alloc] initWithTitle: title action:selector keyEquivalent:@""] autorelease];
+	[menuItem setTarget: target];
+	[[self menu] addItem: menuItem];
+	return menuItem;
+}
+
+
+
+// Build contextual menu
+- (NSMenu*) menuForEvent: (NSEvent*) event {
+	NSMenuItem * menuItem;
+	
+	[self setMenu: [[[NSMenu alloc] initWithTitle:CtFLocalizedString( @"ClickTo Flash Contextual menu", @"Title of Contextual Menu")] autorelease]];
+	
+	if ([self killer] != nil) {
+		[[self killer] addPrincipalMenuItemToContextualMenu];
+	}
+	
+	[self addContextualMenuItemWithTitle:CtFLocalizedString( @"Load Flash", @"Contextual Menu Item: Load Flash" ) 
+								  action: @selector( loadFlash: )];
+		
+	if ([[CTFMenubarMenuController sharedController] multipleFlashViewsExistForWindow:[self window]]) {
+		[self addContextualMenuItemWithTitle: CtFLocalizedString( @"Load All on this Page", @"Load All on this Page contextual menu item" )
+									  action: @selector( loadAllOnPage: )];
+	}
+	
+	[self addContextualMenuItemWithTitle: CtFLocalizedString( @"Hide Flash", @"Hide Flash contextual menu item (sets display:none)")
+								  action: @selector( hideFlash:)];
+	menuItem = [self addContextualMenuItemWithTitle: CtFLocalizedString( @"Remove Flash", @"Remove Flash contextual menu item (sets visibility: hidden)")
+											 action: @selector( removeFlash: )];
+	[menuItem setAlternate:YES];
+	[menuItem setKeyEquivalentModifierMask:NSAlternateKeyMask];
+	
+	[[self menu] addItem: [NSMenuItem separatorItem]];
+	
+	if ([self killer]) {
+		NSInteger itemCount = [[self menu] numberOfItems];
+		[[self killer] addAdditionalMenuItemsForContextualMenu];
+		if ([[self menu] numberOfItems] != itemCount) {
+			[[self menu] addItem: [NSMenuItem separatorItem]];
+		}
+	}
+	
+	if ([self host] && ![self _isHostWhitelisted]) {
+		[self addContextualMenuItemWithTitle: [NSString stringWithFormat:CtFLocalizedString( @"Add %@ to Whitelist", @"Add <sitename> to Whitelist contextual menu item" ), [self host]]
+									   action: @selector( addToWhitelist: )];
+		[[self menu] addItem: [NSMenuItem separatorItem]];
+	}
+	
+	[self addContextualMenuItemWithTitle: CtFLocalizedString( @"ClickToFlash Preferences...", @"Preferences contextual menu item" )
+									action: @selector( editWhitelist: )];
+	
+	
     return [self menu];
 }
 
+
 - (BOOL) validateMenuItem: (NSMenuItem *)menuItem
 {
-    BOOL enabled = YES;
-    SEL action = [menuItem action];
-    if (action == @selector(addToWhitelist:))
-    {
-        NSString* title = [NSString stringWithFormat:
-                NSLocalizedString(@"Add %@ to Whitelist", @"Add <sitename> to Whitelist menu title"), 
-                [self host]];
-        [menuItem setTitle: title];
-        if ([self _isHostWhitelisted])
-            enabled = NO;
-    }
-    else if (action == @selector(removeFromWhitelist:))
-    {
-        if (![self _isHostWhitelisted])
-            enabled = NO;
-    }
-    
-    return enabled;
+	return YES;
 }
+
+
+
+
 
 #pragma mark -
 #pragma mark Loading
 
+- (IBAction) clicked: (id) sender {
+#if LOGGING_ENABLED > 0
+	NSLog(@"CTFPluginController -clicked:");
+#endif
+	if (![self isConverted]) {
+		if ([self _isCommandPressed]) {
+			if ([self _isOptionPressed]) {
+				[self removeFlash:self];
+			} else {
+				[self hideFlash:self];
+			}
+		} else if ([self _isOptionPressed] && ![self _isHostWhitelisted]) {
+			[self _askToAddCurrentSiteToWhitelist];
+		} else {
+				[self convertTypesForContainer:YES];
+		}
+	}
+}
+
+
+- (IBAction)removeFlash: (id) sender;
+{
+    DOMCSSStyleDeclaration *style = [[self container] style];
+	[style setProperty:@"display" value:@"none" priority:@"important"];
+}
+
+- (IBAction)hideFlash: (id) sender;
+{
+    DOMCSSStyleDeclaration *style = [[self container] style];
+	[style setProperty:@"visibility" value:@"hidden" priority:@"important"];
+}
+
 - (IBAction)loadFlash:(id)sender;
 {
     [self _convertTypesForFlashContainer];
-}
-
-- (IBAction)loadH264:(id)sender;
-{
-    [self _convertToMP4Container];
 }
 
 - (IBAction)loadAllOnPage:(id)sender
@@ -648,314 +645,33 @@ BOOL usingMATrackingArea = NO;
     [[CTFMenubarMenuController sharedController] loadFlashForWindow: [self window]];
 }
 
+
 - (void) _loadContent: (NSNotification*) notification
 {
-    [self _convertTypesForContainer];
+    [self convertTypesForContainer:YES];
 }
 
 - (void) _loadContentForWindow: (NSNotification*) notification
 {
 	if( [ notification object ] == [ self window ] )
-		[ self _convertTypesForContainer ];
+		[ self convertTypesForContainer :YES];
 }
 
 - (void) _loadInvisibleContentForWindow: (NSNotification*) notification
 {
 	if( [ notification object ] == [ self window ] && [ self isConsideredInvisible ] ) {
-		[ self _convertTypesForContainer ];
+		[ self convertTypesForContainer:YES ];
 	}
 }
 
-#pragma mark -
-#pragma mark Drawing
 
-- (NSString*) badgeLabelText
-{
-	if( [ self _useHDH264Version ] )
-		return NSLocalizedString( @"HD H.264", @"HD H.264 badge text" );
-    if( [ self _useH264Version ] )
-        return NSLocalizedString( @"H.264", @"H.264 badge text" );
-    else if( [ self _hasH264Version ] )
-        return NSLocalizedString( @"YouTube", @"YouTube badge text" );
-    else if( _badgeText )
-        return _badgeText;
-    else
-        return NSLocalizedString( @"Flash", @"Flash badge text" );
-}
-
-- (void) _drawBadgeWithPressed: (BOOL) pressed
-{
-	// What and how are we going to draw?
-	
-	const float kFrameXInset = 10;
-	const float kFrameYInset =  4;
-	const float kMinMargin   = 11;
-	const float kMinHeight   =  6;
-	
-	NSString* str = [ self badgeLabelText ];
-	
-	NSDictionary* attrs = [ NSDictionary dictionaryWithObjectsAndKeys: 
-						   [ NSFont boldSystemFontOfSize: 20 ], NSFontAttributeName,
-						   [ NSNumber numberWithInt: -1 ], NSKernAttributeName,
-						   [ NSColor blackColor ], NSForegroundColorAttributeName,
-						   nil ];
-	
-	// Set up for drawing.
-	
-	NSRect bounds = [ self bounds ];
-	
-	// How large would this text be?
-	
-	NSSize strSize = [ str sizeWithAttributes: attrs ];
-	
-	float w = strSize.width  + kFrameXInset * 2;
-	float h = strSize.height + kFrameYInset * 2;
-	
-	// Compute a scale factor based on the view's size.
-	
-	float maxW = NSWidth( bounds ) - kMinMargin;
-	float maxH = NSHeight( bounds ) - kMinMargin;
-	float minW = kMinHeight * w / h;
-	
-	BOOL rotate = NO;
-	if( maxW <= minW )	// too narrow in width, so rotate it
-		rotate = YES;
-	
-	if( rotate ) {		// swap the dimensions to scale into
-		float temp = maxW;
-		maxW = maxH;
-		maxH = temp;
-	}
-	
-	if( maxH <= kMinHeight ) {
-		// Too short in height for full margin.
-		
-		// Draw at the smallest size, with less margin,
-		// unless even that would get clipped off.
-		
-		if( maxH + kMinMargin < kMinHeight )
-			return;
-        
-		maxH = kMinHeight;
-	}
-	
-	float scaleFactor = 1.0;
-	
-	if( maxW < w )
-		scaleFactor = maxW / w;
-    
-	if( maxH < h && maxH / h < scaleFactor )
-		scaleFactor = maxH / h;
-	
-	// Apply the scale, and a transform so the result is centered in the view.
-	
-	[ NSGraphicsContext saveGraphicsState ];
-    
-	NSAffineTransform* xform = [ NSAffineTransform transform ];
-	[ xform translateXBy: NSWidth( bounds ) / 2 yBy: NSHeight( bounds ) / 2 ];
-	[ xform scaleBy: scaleFactor ];
-	if( rotate )
-		[ xform rotateByDegrees: 90 ];
-	[ xform concat ];
-	
-    CGContextRef context = [ [ NSGraphicsContext currentContext ] graphicsPort ];
-    
-    CGContextSetAlpha( context, pressed ? 0.40 : 0.25 );
-    CGContextBeginTransparencyLayer( context, nil );
-	
-	// Draw everything at full size, centered on the origin.
-	
-	NSPoint loc = { -strSize.width / 2, -strSize.height / 2 };
-	NSRect borderRect = NSMakeRect( loc.x - kFrameXInset, loc.y - kFrameYInset, w, h );
-	
-	NSBezierPath* fillPath = bezierPathWithRoundedRectCornerRadius( NSInsetRect( borderRect, -2, -2 ), 6 );
-	[ [ NSColor colorWithCalibratedWhite: 1.0 alpha: 0.25 ] set ];
-	[ fillPath fill ];
-	
-	NSBezierPath* path = bezierPathWithRoundedRectCornerRadius( borderRect, 4 );
-	[ [ NSColor blackColor ] set ];
-	[ path setLineWidth: 3 ];
-	[ path stroke ];
-	
-    [ str drawAtPoint: loc withAttributes: attrs ];
-	
-	// Now restore the graphics state:
-	
-    CGContextEndTransparencyLayer( context );
-    
-    [ NSGraphicsContext restoreGraphicsState ];
-}
-
-- (void) _drawGearIcon
-{
-    // add the gear for the contextual menu, but only if the view is
-    // greater than a certain size
-        
-    if ([self _gearVisible]) {
-        NSRect bounds = [ self bounds ];
-
-        float margin = 5.0;
-        NSImage *gearImage = [NSImage imageNamed:@"NSActionTemplate"];
-        // On systems older than 10.5 we need to supply our own image.
-        if (gearImage == nil)
-        {
-            NSString *path = [[NSBundle bundleForClass:[self class]] pathForResource:@"NSActionTemplate" ofType:@"png"];
-            gearImage = [[[NSImage alloc] initWithContentsOfFile:path] autorelease];
-        }
-
-        if( gearImage ) {
-            CGContextRef context = [ [ NSGraphicsContext currentContext ] graphicsPort ];
-            
-            CGContextSetAlpha( context, 0.25 );
-            CGContextBeginTransparencyLayer( context, nil );
-            
-            NSPoint gearImageCenter = NSMakePoint(NSMinX( bounds ) + ( margin + [gearImage size].width/2 ),
-                                                  NSMaxY( bounds ) - ( margin + [gearImage size].height/2 ));
-            
-            id gradient = [NSClassFromString(@"NSGradient") alloc];
-            if (gradient != nil)
-            {
-                NSColor *startingColor = [NSColor colorWithDeviceWhite:1.0 alpha:1.0];
-                NSColor *endingColor = [NSColor colorWithDeviceWhite:1.0 alpha:0.0];
-                
-                gradient = [gradient initWithStartingColor:startingColor endingColor:endingColor];
-                
-                // draw gradient behind gear so that it's visible even on dark backgrounds
-                [gradient drawFromCenter:gearImageCenter
-                                  radius:0.0
-                                toCenter:gearImageCenter
-                                  radius:[gearImage size].height/2*1.5
-                                 options:0];
-                
-                [gradient release];
-            }
-            
-            // draw the gear image
-            [gearImage drawAtPoint:NSMakePoint(gearImageCenter.x - [gearImage size].width/2, 
-                                               gearImageCenter.y - [gearImage size].height/2)
-                          fromRect:NSZeroRect
-                         operation:NSCompositeSourceOver
-                          fraction:1.0];
-
-            CGContextEndTransparencyLayer( context );
-       }
-    }
-}
-
-- (void) _drawBackground
-{
-    NSRect selfBounds = [self bounds];
-
-    NSRect fillRect   = NSInsetRect(selfBounds, 1.0, 1.0);
-    NSRect strokeRect = selfBounds;
-
-    NSColor *startingColor = [NSColor colorWithDeviceWhite:1.0 alpha:0.15];
-    NSColor *endingColor = [NSColor colorWithDeviceWhite:0.0 alpha:0.15];
-
-    // When the mouse is up or outside the view, we want a convex look, so we draw the gradient downward (90+180=270 degrees).
-    // When the mouse is down and inside the view, we want a concave look, so we draw the gradient upward (90 degrees).
-    id gradient = [NSClassFromString(@"NSGradient") alloc];
-    if (gradient != nil)
-    {
-        gradient = [gradient initWithStartingColor:startingColor endingColor:endingColor];
-
-        [gradient drawInBezierPath:[NSBezierPath bezierPathWithRect:fillRect] angle:90.0 + ((mouseIsDown && mouseInside) ? 0.0 : 180.0)];
-
-        [gradient release];
-    }
-    else
-    {
-		//tweak the opacity of the endingColor for compatibility with CTGradient
-		endingColor = [NSColor colorWithDeviceWhite:0.0 alpha:0.00];
-		
-		gradient = [CTGradient gradientWithBeginningColor:startingColor
-											  endingColor:endingColor];
-		
-		//angle is reversed compared to NSGradient
-		[gradient fillBezierPath:[NSBezierPath bezierPathWithRect:fillRect] angle:-90.0 - ((mouseIsDown && mouseInside) ? 0.0 : 180.0)];
-		
-		//CTGradient instances are returned autoreleased - no need for explicit release here
-    }
-
-    // Draw stroke
-    [[NSColor colorWithCalibratedWhite:0.0 alpha:0.50] set];
-    [NSBezierPath setDefaultLineWidth:2.0];
-    [NSBezierPath setDefaultLineCapStyle:NSSquareLineCapStyle];
-    [[NSBezierPath bezierPathWithRect:strokeRect] stroke];
-
-    // Draw label
-    [ self _drawBadgeWithPressed: mouseIsDown && mouseInside ];
-    
-    // Draw the gear icon
-	if ([[CTFUserDefaultsController standardUserDefaults] boolForKey:sDrawGearImageOnlyOnMouseOverHiddenPref]) {
-		if( mouseInside && !mouseIsDown )
-			[ self _drawGearIcon ];
-	} else {
-		[ self _drawGearIcon ];
-	}
-}
-
-- (void) _checkMouseLocation
-{
-	NSPoint mouseLoc = [NSEvent mouseLocation];
-	
-	BOOL nowInside = NSPointInRect(mouseLoc, [_webView bounds]);
-	if (nowInside) {
-		mouseInside = YES;
-	} else {
-		mouseInside = NO;
-	}
-}
-
-- (void) _addTrackingAreaForCTF
-{
-    if (trackingArea)
-        return;
-    
-    trackingArea = [NSClassFromString(@"NSTrackingArea") alloc];
-    if (trackingArea != nil)
-    {
-        [(MATrackingArea *)trackingArea initWithRect:[self bounds]
-                                             options:MATrackingMouseEnteredAndExited | MATrackingActiveInKeyWindow | MATrackingEnabledDuringMouseDrag | MATrackingInVisibleRect
-                                               owner:self
-                                            userInfo:nil];
-        [self addTrackingArea:trackingArea];
-    }
-    else
-    {
-        trackingArea = [NSClassFromString(@"MATrackingArea") alloc];
-        [(MATrackingArea *)trackingArea initWithRect:[self bounds]
-                                             options:MATrackingMouseEnteredAndExited | MATrackingActiveInKeyWindow | MATrackingEnabledDuringMouseDrag | MATrackingInVisibleRect
-                                               owner:self
-                                            userInfo:nil];
-        [MATrackingArea addTrackingArea:trackingArea toView:self];
-        usingMATrackingArea = YES;
-    }
-}
-
-- (void) _removeTrackingAreaForCTF
-{
-    if (trackingArea)
-    {
-        if (usingMATrackingArea)
-        {
-            [MATrackingArea removeTrackingArea:trackingArea fromView:self];
-        }
-        else
-        {
-            [self removeTrackingArea:trackingArea];
-        }
-        [trackingArea release];
-        trackingArea = nil;
-    }
-}
 
 
 #pragma mark -
-#pragma mark YouTube H.264 support
+#pragma mark Helper Methods
 
 
-- (NSDictionary*) _flashVarDictionary: (NSString*) flashvarString
++ (NSDictionary*) flashVarDictionary: (NSString*) flashvarString
 {
     NSMutableDictionary* flashVarsDictionary = [ NSMutableDictionary dictionary ];
     
@@ -974,216 +690,14 @@ BOOL usingMATrackingArea = NO;
     return flashVarsDictionary;
 }
 
-- (NSDictionary*) _flashVarDictionaryFromYouTubePageHTML: (NSString*) youTubePageHTML
-{
-	NSMutableDictionary* flashVarsDictionary = [ NSMutableDictionary dictionary ];
-	NSScanner *HTMLScanner = [[NSScanner alloc] initWithString:youTubePageHTML];
-	
-	[HTMLScanner scanUpToString:@"var swfArgs = {" intoString:nil];
-	BOOL swfArgsFound = [HTMLScanner scanString:@"var swfArgs = {" intoString:nil];
-	
-	if (swfArgsFound) {
-		NSString *swfArgsString = nil;
-		[HTMLScanner scanUpToString:@"}" intoString:&swfArgsString];
-		NSArray *arrayOfSWFArgs = [swfArgsString componentsSeparatedByString:@", "];
-		CTFForEachObject( NSString, currentArgPairString, arrayOfSWFArgs ) {
-			NSRange sepRange = [ currentArgPairString rangeOfString:@": "];
-			if (sepRange.location != NSNotFound) {
-				NSString *potentialKey = [currentArgPairString substringToIndex:sepRange.location];
-				NSString *potentialVal = [currentArgPairString substringFromIndex:NSMaxRange(sepRange)];
-				
-				// we might need to strip the surrounding quotes from the keys and values
-				// (but not always)
-				NSString *key = nil;
-				if ([[potentialKey substringToIndex:1] isEqualToString:@"\""]) {
-					key = [potentialKey substringWithRange:NSMakeRange(1,[potentialKey length] - 2)];
-				} else {
-					key = potentialKey;
-				}
-				
-				NSString *val = nil;
-				if ([[potentialVal substringToIndex:1] isEqualToString:@"\""]) {
-					val = [potentialVal substringWithRange:NSMakeRange(1,[potentialVal length] - 2)];
-				} else {
-					val = potentialVal;
-				}
-				
-				[flashVarsDictionary setObject:val forKey:key];
-			}
-		}
-	}
-	
-	[HTMLScanner release];
-	return flashVarsDictionary;
-}
 
 - (NSString*) flashvarWithName: (NSString*) argName
 {
-    return [ _flashVars objectForKey: argName ];
+    return [[[ _flashVars objectForKey: argName ] retain] autorelease];
 }
 
-/*- (NSString*) _videoId
-{
-    return [ self flashvarWithName: @"video_id" ];
-}*/
 
-- (NSString*) _videoHash
-{
-    return [ self flashvarWithName: @"t" ];
-}
-
-- (void) _checkForH264VideoVariants
-{
-	NSString* video_id = [self videoId];
-	NSString* video_hash = [ self _videoHash ];
-	
-	if (video_id && video_hash) {
-		
-		NSString* src = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=18&video_id=%@&t=%@",
-						 video_id, video_hash ];
-		NSString* HDSrc = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=22&video_id=%@&t=%@",
-						   video_id, video_hash ];
-		
-		NSError *error = nil;
-		CTFURLConnection *theConnection = [[CTFURLConnection alloc] init];
-		NSHTTPURLResponse *H264Response = [theConnection getURLResponseHeaders:[NSURL URLWithString:src]
-																		 error:&error];
-		[theConnection release];
-		
-		int statusCode = [H264Response statusCode];
-		
-		// 206 status code means partial content has been delivered, because of the
-		// range header, 200 means the request was OK
-		if (  ((statusCode == 206) || (statusCode == 200))   &&   (! error)  ) _hasH264Version = YES;
-		
-		CTFURLConnection *connectionTwo = [[CTFURLConnection alloc] init];
-		NSHTTPURLResponse *HDH264Response = [connectionTwo getURLResponseHeaders:[NSURL URLWithString:HDSrc]
-																		   error:&error];
-		[connectionTwo release];
-		
-		statusCode = [HDH264Response statusCode];
-		if (  ((statusCode == 206) || (statusCode == 200))   &&   (! error)  ) _hasHDH264Version = YES;
-	}
-}
-
-// this method should be called on another thread,
-// (so that we can use an NSConditionLock)
-- (void)checkVideoVariant:(NSURLRequest *)request;
-{
-	
-}
-
-- (BOOL) _hasHDH264Version
-{
-	/*BOOL _hasHDH264Version = NO;
-	if (_fromYouTube) {
-		NSString *fmtMapString = [ self flashvarWithName: @"fmt_map" ];
-		NSArray *fmtMapArray = [fmtMapString componentsSeparatedByString:@","];
-		
-		CTFForEachObject( NSString, currentMapString, fmtMapArray ) {
-			NSString *fmtQuality = [[currentMapString componentsSeparatedByString:@"/"] objectAtIndex:0];
-			if ([fmtQuality isEqualToString:@"22"]) {
-				_hasHDH264Version = YES;
-				break;
-			}
-		}
-	}*/
-	
-	return (_fromYouTube && _hasHDH264Version);
-}
-
-- (BOOL) _hasH264Version
-{
-	/*BOOL _hasH264Version = NO;
-    if ( _fromYouTube ) {
-		NSString *fmtMapString = [ self flashvarWithName: @"fmt_map" ];
-		NSArray *fmtMapArray = [fmtMapString componentsSeparatedByString:@","];
-		
-		CTFForEachObject( NSString, currentMapString, fmtMapArray ) {
-			NSString *fmtQuality = [[currentMapString componentsSeparatedByString:@"/"] objectAtIndex:0];
-			if ([fmtQuality isEqualToString:@"18"] || [fmtQuality isEqualToString:@"22"]) {
-				_hasH264Version = YES;
-				break;
-			}
-		}
-	}*/
-	
-	return (_fromYouTube && _hasH264Version);
-	
-	// sometimes, even though we have a videoId and a videoHash, the movie
-	// still doesn't have an H.264 version, so this logic is flawed
-	
-	// return [self videoId] != nil && [ self _videoHash ] != nil;
-}
-
-- (BOOL) _useHDH264Version
-{
-	return [ self _hasHDH264Version ]
-	&& [ [ CTFUserDefaultsController standardUserDefaults ] boolForKey: sUseYouTubeH264DefaultsKey ] 
-	&& [ [ CTFUserDefaultsController standardUserDefaults ] boolForKey: sUseYouTubeHDH264DefaultsKey ]
-	&& [ [ CTFUserDefaultsController standardUserDefaults ] boolForKey: sPluginEnabled ];
-}
-
-- (BOOL) _useH264Version
-{
-    return [ self _hasH264Version ] 
-	&& [ [ CTFUserDefaultsController standardUserDefaults ] boolForKey: sUseYouTubeH264DefaultsKey ] 
-	&& [ [ CTFUserDefaultsController standardUserDefaults ] boolForKey: sPluginEnabled ];
-}
-
-- (void) _convertElementForMP4: (DOMElement*) element
-{
-    NSString* video_id = [self videoId];
-    NSString* video_hash = [ self _videoHash ];
-    
-	NSString* src;
-	if ([self _hasHDH264Version]) {
-		src = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=22&video_id=%@&t=%@",
-						 video_id, video_hash ];
-	} else {
-		src = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=18&video_id=%@&t=%@",
-													video_id, video_hash ];
-	}
-    
-    [ element setAttribute: @"src" value: src ];
-    [ element setAttribute: @"type" value: @"video/mp4" ];
-    [ element setAttribute: @"scale" value: @"aspect" ];
-    [ element setAttribute: @"autoplay" value: @"true" ];
-    [ element setAttribute: @"cache" value: @"false" ];
-   
-    if( ! [ element hasAttribute: @"width" ] )
-        [ element setAttribute: @"width" value: @"640" ];
-   
-    if( ! [ element hasAttribute: @"height" ] )
-       [ element setAttribute: @"height" value: @"500" ];
-
-    [ element setAttribute: @"flashvars" value: nil ];
-}
-
-- (void) _convertToMP4Container
-{
-	[self _revertToOriginalOpacityAttributes];
-	
-	// Delay this until the end of the event loop, because it may cause self to be deallocated
-	[self _prepareForConversion];
-	[self performSelector:@selector(_convertToMP4ContainerAfterDelay) withObject:nil afterDelay:0.0];
-}
-
-- (void) _convertToMP4ContainerAfterDelay
-{
-    DOMElement* newElement = (DOMElement*) [ [self container] cloneNode: NO ];
-    
-    [ self _convertElementForMP4: newElement ];
-    
-    // Just to be safe, since we are about to replace our containing element
-    [[self retain] autorelease];
-    
-    // Replace self with element.
-    [[[self container] parentNode] replaceChild:newElement oldChild:[self container]];
-    [self setContainer:nil];
-}
-
-- (NSString *)launchedAppBundleIdentifier
++ (NSString *)launchedAppBundleIdentifier
 {
 	NSString *appBundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
 	
@@ -1219,58 +733,47 @@ BOOL usingMATrackingArea = NO;
 	return appBundleIdentifier;
 }
 
-- (IBAction)downloadH264:(id)sender
-{
-	NSString* video_id = [self videoId];
-    NSString* video_hash = [ self _videoHash ];
-    
-	NSString *src;
-	if ([[CTFUserDefaultsController standardUserDefaults] boolForKey:sUseYouTubeHDH264DefaultsKey] && [self _hasHDH264Version]) {
-		src = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=22&video_id=%@&t=%@",
-			   video_id, video_hash ];
-	} else {
-		src = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=18&video_id=%@&t=%@",
-			   video_id, video_hash ];
-	}
-	
-	[[NSWorkspace sharedWorkspace] openURLs:[NSArray arrayWithObject:[NSURL URLWithString:src]]
-					withAppBundleIdentifier:[self launchedAppBundleIdentifier]
-									options:NSWorkspaceLaunchDefault
-			 additionalEventParamDescriptor:[NSAppleEventDescriptor nullDescriptor]
-						  launchIdentifiers:nil];
+
+
+- (BOOL) _isOptionPressed {
+    BOOL isOptionPressed = (([[NSApp currentEvent] modifierFlags] & NSAlternateKeyMask) != 0);
+    return isOptionPressed;
 }
 
-- (IBAction)loadYouTubePage:(id)sender
-{
-	NSString* YouTubePageURL = [ NSString stringWithFormat: @"http://www.youtube.com/watch?v=%@", [self videoId] ];
-	
-	[[NSWorkspace sharedWorkspace] openURLs:[NSArray arrayWithObject:[NSURL URLWithString:YouTubePageURL]]
-					withAppBundleIdentifier:[self launchedAppBundleIdentifier]
-									options:NSWorkspaceLaunchDefault
-			 additionalEventParamDescriptor:[NSAppleEventDescriptor nullDescriptor]
-						  launchIdentifiers:nil];
+- (BOOL) _isCommandPressed {
+	BOOL isCommandPressed = (([[NSApp currentEvent] modifierFlags] & NSCommandKeyMask) != 0);
+	return isCommandPressed;
 }
 
-- (IBAction)openFullscreenInQTPlayer:(id)sender;
-{
-	NSString* video_id = [self videoId];
-    NSString* video_hash = [ self _videoHash ];
-    
-	NSString *src;
-	if ([[CTFUserDefaultsController standardUserDefaults] boolForKey:sUseYouTubeHDH264DefaultsKey] && [self _hasHDH264Version]) {
-		src = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=22&video_id=%@&t=%@",
-					 video_id, video_hash ];
-	} else {
-		src = [ NSString stringWithFormat: @"http://www.youtube.com/get_video?fmt=18&video_id=%@&t=%@",
-			   video_id, video_hash ];
+
+- (void) browseToURLString: (NSString*) URLString {
+	[_webView setMainFrameURL:URLString];
+}
+
+
+- (void) downloadURLString: (NSString*) URLString {
+	[[NSWorkspace sharedWorkspace] openURLs: [NSArray arrayWithObject:[NSURL URLWithString: URLString]]
+					withAppBundleIdentifier: [CTFClickToFlashPlugin launchedAppBundleIdentifier]
+									options: NSWorkspaceLaunchDefault
+			 additionalEventParamDescriptor: [NSAppleEventDescriptor nullDescriptor]
+						  launchIdentifiers: nil];		
+}
+
+
+
+- (BOOL) useNewStyleUI {
+	BOOL result = NO;
+
+	if ( NSAppKitVersionNumber >= NSAppKitVersionNumber10_5 ) {
+		result = [[CTFUserDefaultsController standardUserDefaults] boolForKey: sUseNewStyleUIDefaultsKey];
 	}
 	
-	NSString *scriptSource = [NSString stringWithFormat:
-							  @"tell application \"QuickTime Player\"\nactivate\ngetURL \"%@\"\nrepeat while (display state of front document is not presentation)\ndelay 1\npresent front document scale screen\nend repeat\nrepeat while (playing of front document is false)\ndelay 1\nplay front document\nend repeat\nend tell",src];
-	NSAppleScript *openInQTPlayerScript = [[NSAppleScript alloc] initWithSource:scriptSource];
-	[openInQTPlayerScript executeAndReturnError:nil];
-	[openInQTPlayerScript release];
+	return result;
 }
+
+
+
+
 
 
 #pragma mark -
@@ -1286,20 +789,27 @@ BOOL usingMATrackingArea = NO;
     }
 }
 
-- (void) _convertTypesForContainer
-{
-    if ([self _useH264Version])
-        [self _convertToMP4Container];
-    else
+
+- (void) convertTypesForContainer: (BOOL) keepIt {
+	BOOL success = NO;
+	if (keepIt && [self killer]) {
+		success = [[self killer] convert];
+	}
+
+	if (!success) {
         [self _convertTypesForFlashContainer];
+	}
+	
+	[self setIsConverted: YES];
 }
+
 
 - (void) _convertTypesForFlashContainer
 {
-	[self _revertToOriginalOpacityAttributes];
+	[self revertToOriginalOpacityAttributes];
 	
 	// Delay this until the end of the event loop, because it may cause self to be deallocated
-	[self _prepareForConversion];
+	[self prepareForConversion];
 	[self performSelector:@selector(_convertTypesForFlashContainerAfterDelay) withObject:nil afterDelay:0.0];
 }
 
@@ -1323,12 +833,15 @@ BOOL usingMATrackingArea = NO;
     // Remove & reinsert the node to persuade the plugin system to notice the type change:
     id parent = [[self container] parentNode];
     id successor = [[self container] nextSibling];
-    [parent removeChild:[self container]];
-    [parent insertBefore:[self container] refChild:successor];
+	
+	DOMElement *theContainer = [[self container] retain];
+    [parent removeChild:theContainer];
+    [parent insertBefore:theContainer refChild:successor];
+	[theContainer release];
     [self setContainer:nil];
 }
 
-- (void) _prepareForConversion
+- (void) prepareForConversion
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 	
@@ -1338,7 +851,7 @@ BOOL usingMATrackingArea = NO;
 	[ self _abortAlert ];
 }
 
-- (void) _revertToOriginalOpacityAttributes
+- (void) revertToOriginalOpacityAttributes
 {
 	NSString *selfWmode = [[self originalOpacityAttributes] objectForKey:@"self-wmode"];
 	if (selfWmode != nil ) {
@@ -1367,98 +880,480 @@ BOOL usingMATrackingArea = NO;
 	}
 }
 
-- (WebView *)webView
+
+
+
+
+
+#pragma mark -
+#pragma mark Full screen - for X.5 and higher only
+
+- (IBAction) enterFullScreen: (id) sender {
+	SetSystemUIMode(kUIModeAllSuppressed, 0);
+	
+	NSWindow * myWindow = [self window];
+	NSRect originRect;
+	originRect.size = [self frame].size;
+	originRect.origin = [[self window] convertBaseToScreen:[self convertPoint:NSZeroPoint toView:nil]];
+	CTFFullScreenWindow * myFullScreenWindow = [[[CTFFullScreenWindow alloc]
+										   initWithContentRect: originRect
+										   styleMask: NSBorderlessWindowMask
+										   backing: NSBackingStoreBuffered
+										   defer: YES] autorelease];
+	[self setFullScreenWindow: myFullScreenWindow];
+	[myFullScreenWindow setPlugin: self];
+
+	[myFullScreenWindow setLevel:NSNormalWindowLevel];
+	[myFullScreenWindow setContentView:[self containerView]];
+	[myFullScreenWindow setTitle: CtFLocalizedString(@"ClickToFlash Fullscreen", @"Fullscreen Window Title")];
+	[myFullScreenWindow setHasShadow:YES];
+	
+	NSRect fullScreenFrame = [[myWindow screen] frame];
+	// Use animator to go to full screen as using the window's setFrame:display:animate: just jumps to the full screen size
+	[[myFullScreenWindow animator] setFrame:[myFullScreenWindow frameRectForContentRect:fullScreenFrame] display:YES];
+	[myFullScreenWindow makeKeyAndOrderFront:nil];
+
+	[[[self buttonsView] viewWithTag: CTFFullScreenButtonTag] setImage: [NSImage imageNamed: NSImageNameExitFullScreenTemplate]];
+	[[[self buttonsView] viewWithTag: CTFFullScreenButtonTag] setToolTip: CtFLocalizedString( @"Return to Web Page", @"Tooltip for fullscreenbutton while in fullscreen mode")];
+	[[self actionButton] setHidden: YES];
+
+	if ( [self killer] != nil ) {
+		[[self killer] startFullScreen];
+	}
+}
+
+
+
+- (IBAction) exitFullScreen: (id) sender {
+	if ( [self isFullScreen] ) {
+		// destination rect in screen coordinates
+		SetSystemUIMode(kUIModeNormal, 0);
+		NSRect onScreenRect;
+		onScreenRect.origin = [[self window] convertBaseToScreen:[self convertPoint:NSZeroPoint toView:nil]];
+		onScreenRect.size = [self frame].size;
+		
+		if ( [self killer] != nil ) {
+			NSRect killerRect = [[self killer] stopFullScreen];
+			if ( !NSIsEmptyRect(killerRect) ) {
+				onScreenRect = killerRect;
+			}
+		}
+		
+//		NSLog(@"ClickToFlash Plugin -exitFullScreen: resize to: %f %f %f %f", onScreenRect.origin.x, onScreenRect.origin.y, onScreenRect.size.width, onScreenRect.size.height);
+
+		// move to new location (don't use an animator here as it works asynchronously and we'd need to time the transfer of the view separately then)
+		[[self fullScreenWindow] setFrame:onScreenRect display:YES animate:YES];
+		
+		// transfer the view back into the browser window
+		NSPoint insertionPoint = NSZeroPoint;
+		insertionPoint.x = round(([self bounds].size.width - [[fullScreenWindow contentView] bounds].size.width) * 0.5);
+		insertionPoint.y = round(([self bounds].size.height - [[fullScreenWindow contentView] bounds].size.height) * 0.5);
+		[[fullScreenWindow contentView] setFrameOrigin: insertionPoint];
+		[self addSubview:[fullScreenWindow contentView]];
+		[[self fullScreenWindow] close];
+		[self setFullScreenWindow: nil];
+		[[self window] makeKeyAndOrderFront:nil];
+		
+		[[[self buttonsView] viewWithTag: CTFFullScreenButtonTag] setImage: [NSImage imageNamed: NSImageNameEnterFullScreenTemplate]];
+		[[[self buttonsView] viewWithTag: CTFFullScreenButtonTag] setToolTip: CtFLocalizedString( @"Fill entire screen", @"Tooltip for fullscreen button while not in fullscreen mode")];
+
+		[[self actionButton] setHidden: NO];
+	}
+}
+
+
+
+- (IBAction) toggleFullScreen: (id) sender {
+	if ([self isFullScreen]) {
+		[self exitFullScreen: sender];
+	}
+	else {
+		[self enterFullScreen: sender];
+	}	
+}
+
+
+
+- (NSButton *) addFullScreenButton {
+	NSButton * button = nil;
+	
+	if ([[self buttonsView] viewWithTag: CTFFullScreenButtonTag] == nil) {
+		button = [CTFButtonsView button];
+		[button setImage: [NSImage imageNamed:NSImageNameEnterFullScreenTemplate]];
+		[button setToolTip: CtFLocalizedString( @"Fill entire screen", @"Tooltip for fullscreen button" )];
+		[button sizeToFit];
+		[button setTag: CTFFullScreenButtonTag];
+		[button setTarget: self];
+		[button setAction: @selector(toggleFullScreen:)];
+		[[self buttonsView] addButton: button];
+	}
+	
+	return button;
+}
+
+
+
+
+
+#pragma mark -
+#pragma mark Accessibility
+
+
+- (BOOL)accessibilityIsIgnored {
+	return NO;
+}
+
+
+
+- (NSArray *) accessibilityAttributeNames {
+	NSMutableArray * attributes = [[[super accessibilityAttributeNames] mutableCopy] autorelease];
+	//	[attributes addObject: NSAccessibilityTitleAttribute];
+	[attributes addObject: NSAccessibilityDescriptionAttribute];
+//	[attributes addObject: NSAccessibilityHelpAttribute];
+//	[attributes addObject: NSAccessibilityParentAttribute];
+//	[attributes addObject: NSAccessibilityChildrenAttribute];
+//	[attributes addObject: NSAccessibilityRoleAttribute];
+//	[attributes addObject: NSAccessibilityRoleDescriptionAttribute];
+	return attributes;
+}
+
+
+
+- (id) accessibilityAttributeValue: (NSString *) attribute {
+	id value = nil;
+//	NSLog(@"AX: %@", attribute);
+	
+	if ( [attribute isEqualToString: NSAccessibilityTitleAttribute] ) {
+		//	value = [self badgeLabelText];
+	}
+	else if ( [attribute isEqualToString: NSAccessibilityDescriptionAttribute] ) {
+		value = CtFLocalizedString( @"Blocked Flash content", @"CTFClickToFlashPlugin Accessibility: Description");
+	}
+	else if ( [attribute isEqualToString: NSAccessibilityHelpAttribute] ) {
+		value = CtFLocalizedString( @"A film or some other interactive content which is implemented in Flash should appear here. ClickToFlash prevented it from loading automatically. Clicking will start loading it.", @"CTFClickToFlashPlugin Accessibility: Help");
+	}
+	else if ( [attribute isEqualToString: NSAccessibilityParentAttribute] ){
+		value = nil;  // no idea what needs to go here
+	}
+	else if ( [attribute isEqualToString: NSAccessibilityChildrenAttribute] ){
+		value = NSAccessibilityUnignoredChildren( [NSArray arrayWithObjects: [self viewWithTag: CTFMainButtonTag], [self actionButton], [self buttonsView], nil] );
+	} 
+	else if ( [attribute isEqualToString: NSAccessibilityRoleAttribute] ) {
+		value = NSAccessibilityGroupRole;
+	}
+	else if ( [attribute isEqualToString: NSAccessibilityRoleDescriptionAttribute] ) {
+		value = NSAccessibilityRoleDescription(NSAccessibilityGroupRole, nil);
+	}
+	else if ( [attribute isEqualToString: NSAccessibilityTopLevelUIElementAttribute] ) {
+		value = [self window];
+	}
+	else if ( [attribute isEqualToString: NSAccessibilityWindowAttribute] ) {
+		value = [self window];
+	}
+	else if ( [attribute isEqualToString: @"AXBlockQuoteLevel"] ) { // does this make any sense? Copying the name and value from what I saw in Accessibility Inspector.
+		value = [NSNumber numberWithInt: 0];
+	}
+	else {
+		value =  [super accessibilityAttributeValue:attribute];
+	}
+	
+	return value;
+}
+
+
+
+
+#pragma mark -
+#pragma mark Preferences
+
++ (void) _migratePrefsToExternalFile
 {
+	NSArray *parasiticDefaultsNameArray = [NSArray arrayWithObjects:@"ClickToFlash_pluginEnabled",
+										   @"ClickToFlash_useYouTubeH264",
+										   @"ClickToFlash_autoLoadInvisibleViews",
+										   @"ClickToFlash_sifrMode",
+										   @"ClickToFlash_checkForUpdatesOnFirstLoad",
+										   @"ClickToFlash_siteInfo",
+										   nil];
+	
+	NSArray *externalDefaultsNameArray = [NSArray arrayWithObjects:sPluginEnabledDefaultsKey,
+										  sUseYouTubeH264DefaultsKey,
+										  sAutoLoadInvisibleFlashViewsDefaultsKey,
+										  @"sifrMode",
+										  @"checkForUpdatesOnFirstLoad",
+										  @"siteInfo",
+										  nil];
+	
+	NSMutableDictionary *externalFileDefaults = [[CTFUserDefaultsController standardUserDefaults] dictionaryRepresentation];
+	
+	[[NSUserDefaults standardUserDefaults] addSuiteNamed:@"com.github.rentzsch.clicktoflash"];
+	unsigned int i;
+	for (i = 0; i < [parasiticDefaultsNameArray count]; i++) {
+		NSString *currentParasiticDefault = [parasiticDefaultsNameArray objectAtIndex:i];
+		id prefValue = [[NSUserDefaults standardUserDefaults] objectForKey:currentParasiticDefault];
+		if (prefValue) {
+			NSString *externalPrefDefaultName = [externalDefaultsNameArray objectAtIndex:i];
+			id existingExternalPref = [[CTFUserDefaultsController standardUserDefaults] objectForKey:externalPrefDefaultName];
+			if (! existingExternalPref) {
+				// don't overwrite existing external preferences
+				[externalFileDefaults setObject:prefValue forKey:externalPrefDefaultName];
+			} else {
+				if ([currentParasiticDefault isEqualToString:@"ClickToFlash_siteInfo"]) {
+					// merge the arrays of whitelisted sites, in case they're not identical
+					
+					NSMutableArray *combinedWhitelist = [NSMutableArray arrayWithArray:prefValue];
+					[combinedWhitelist addObjectsFromArray:existingExternalPref];
+					[externalFileDefaults setObject:combinedWhitelist forKey:externalPrefDefaultName];
+					
+					// because people named Kevin Ballard messed up their preferences file and somehow
+					// managed to retain ClickToFlash_siteInfo in their com.github plist file
+					[externalFileDefaults removeObjectForKey:currentParasiticDefault];
+				}
+			}
+			// eliminate the parasitic default, regardless of whether we transferred them or not
+			[[NSUserDefaults standardUserDefaults] removeObjectForKey:currentParasiticDefault];
+		}
+	}
+	[[NSUserDefaults standardUserDefaults] removeSuiteNamed:@"com.github.rentzsch.clicktoflash"];
+}
+
+
++ (void) _uniquePrefsFileWhitelist
+{
+	NSArray *siteInfoArray = [[CTFUserDefaultsController standardUserDefaults] arrayForKey:@"siteInfo"];
+	NSSet *siteInfoSet = [NSSet setWithArray:siteInfoArray];
+	
+	[[CTFUserDefaultsController standardUserDefaults] setValue:[siteInfoSet allObjects] forKeyPath:@"values.siteInfo"];
+}
+
+
++ (void) _addApplicationWhitelistArrayToPrefsFile
+{
+	CTFUserDefaultsController *standardUserDefaults = [CTFUserDefaultsController standardUserDefaults];
+	NSArray *applicationWhitelist = [standardUserDefaults arrayForKey:sApplicationWhitelist];
+	if (! applicationWhitelist) {
+		// add an empty array to the plist file so people know exactly where to
+		// whitelist apps
+		
+		[standardUserDefaults setObject:[NSArray array] forKey:sApplicationWhitelist];
+	}
+}
+
+
+
+
+
+#pragma mark -
+#pragma mark Accessors
+
+- (WebView *)webView {
     return _webView;
 }
-- (void)setWebView:(WebView *)newValue
-{
-    [newValue retain];
-    [_webView release];
+
+- (void)setWebView:(WebView *)newValue {
+    // Not retained, because the WebView owns the plugin, so we'll get a retain cycle.
     _webView = newValue;
 }
 
-- (DOMElement *)container
-{
+
+- (DOMElement *)container {
     return _container;
 }
-- (void)setContainer:(DOMElement *)newValue
-{
+
+- (void)setContainer:(DOMElement *)newValue {
     [newValue retain];
     [_container release];
     _container = newValue;
 }
 
-- (NSString *)host
-{
+
+- (NSString *)host {
     return _host;
 }
-- (void)setHost:(NSString *)newValue
-{
+
+- (void)setHost:(NSString *)newValue {
     [newValue retain];
     [_host release];
     _host = newValue;
 }
 
-- (NSString *)baseURL
-{
+
+- (NSString *)baseURL {
     return _baseURL;
 }
-- (void)setBaseURL:(NSString *)newValue
-{
+
+- (void)setBaseURL:(NSString *)newValue {
     [newValue retain];
     [_baseURL release];
     _baseURL = newValue;
 }
 
-- (NSDictionary *)attributes
-{
+
+- (NSDictionary *)attributes {
     return _attributes;
 }
-- (void)setAttributes:(NSDictionary *)newValue
-{
+
+- (void)setAttributes:(NSDictionary *)newValue {
     [newValue retain];
     [_attributes release];
     _attributes = newValue;
 }
 
-- (NSDictionary *)originalOpacityAttributes
-{
+
+- (NSDictionary *)originalOpacityAttributes {
     return _originalOpacityAttributes;
 }
-- (void)setOriginalOpacityAttributes:(NSDictionary *)newValue
-{
+
+- (void)setOriginalOpacityAttributes:(NSDictionary *)newValue {
     [newValue retain];
     [_originalOpacityAttributes release];
     _originalOpacityAttributes = newValue;
 }
 
-- (NSString *)src
-{
+
+- (NSString *)src {
     return _src;
 }
-- (void)setSrc:(NSString *)newValue
-{
+
+- (void)setSrc:(NSString *)newValue {
     [newValue retain];
     [_src release];
     _src = newValue;
 }
 
-- (NSString *)videoId
-{
-    return _videoId;
-}
-- (void)setVideoId:(NSString *)newValue
-{
-    [newValue retain];
-    [_videoId release];
-    _videoId = newValue;
+
+- (CTFKiller *)killer {
+	return killer;
 }
 
-- (void)setLaunchedAppBundleIdentifier:(NSString *)newValue
-{
-    [newValue retain];
-    [_launchedAppBundleIdentifier release];
-    _launchedAppBundleIdentifier = newValue;
+- (void)setKiller:(CTFKiller *)newKiller {
+	[newKiller retain];
+	[killer release];
+	killer = newKiller;
 }
+
+
+- (NSView *) containerView {
+	return containerView;
+}
+
+- (void) setContainerView: (NSView *) newContainerView {
+	[newContainerView retain];
+	[containerView release];
+	containerView = newContainerView;
+}
+
+
+- (CTFMainButton *) mainButton {
+	return mainButton;
+}
+
+- (void) setMainButton: (CTFMainButton *) newMainButton {
+	[newMainButton retain];
+	[mainButton release];
+	mainButton = newMainButton;
+}
+
+
+- (NSView *) buttonsContainer {
+	return buttonsContainer;
+}
+
+- (void) setButtonsContainer: (NSView *) newButtonsContainer {
+	[newButtonsContainer retain];
+	[buttonsContainer release];
+	buttonsContainer = newButtonsContainer;
+}
+
+
+- (CTFActionButton *)actionButton {
+	return actionButton;
+}
+
+- (void)setActionButton:(CTFActionButton *)newActionButton {
+	[newActionButton retain];
+	[actionButton release];
+	actionButton = newActionButton;
+}
+
+
+- (CTFButtonsView *) buttonsView {
+	return buttonsView;
+}
+
+- (void) setButtonsView: (CTFButtonsView *) newButtonsView {
+	[newButtonsView retain];
+	[buttonsView release];
+	buttonsView = newButtonsView;
+}
+
+
+- (CTFFullScreenWindow *) fullScreenWindow {
+	return fullScreenWindow;
+}
+
+- (void) setFullScreenWindow: (CTFFullScreenWindow *) newFullScreenWindow {
+	[newFullScreenWindow retain];
+	[[fullScreenWindow retain] autorelease];
+	fullScreenWindow = newFullScreenWindow;
+}
+
+- (BOOL) isFullScreen {
+	SystemUIMode outMode;
+	GetSystemUIMode(&outMode, NULL);
+	return (outMode != kUIModeNormal);
+}
+
+
+- (NSURL *) previewURL {
+	return previewURL;
+}
+
+- (void) setPreviewURL:(NSURL *) newPreviewURL {
+	[newPreviewURL retain];
+	[previewURL release];
+	previewURL = newPreviewURL;
+	
+	if (previewURL != nil) {
+		CTFLoader * loader = [[[CTFLoader alloc] initWithURL: newPreviewURL delegate: self selector:@selector(receivedPreviewImage:)] autorelease];
+		[loader start];
+	}
+}
+
+
+- (BOOL) isConverted {
+	return isConverted;
+}
+
+- (void) setIsConverted: (BOOL) newIsConverted {
+	[[self mainButton] setHidden: newIsConverted];
+	isConverted = newIsConverted;
+}
+
+
+
+
+
+- (NSImage *) previewImage {
+    return previewImage;
+}
+
+- (void) setPreviewImage: (NSImage *) newPreviewImage {
+	[newPreviewImage retain];
+	[previewImage release];
+	previewImage = newPreviewImage;
+	
+	[[self containerView] setNeedsDisplay: YES];
+}
+
+- (void) receivedPreviewImage: (CTFLoader*) loader {
+	NSImage * image = [[[NSImage alloc] initWithData: [loader data]] autorelease];
+	if (image != nil) {
+		[self setPreviewImage: image];
+	}
+}
+
+
+
+
 @end

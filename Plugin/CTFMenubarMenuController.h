@@ -2,7 +2,7 @@
 
 The MIT License
 
-Copyright (c) 2008-2009 Click to Flash Developers
+Copyright (c) 2008-2009 ClickToFlash Developers
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,9 +25,10 @@ THE SOFTWARE.
 */
 
 #import <Cocoa/Cocoa.h>
+#import "CTFUtilities.h"
 
 @class CTFWhitelistWindowController;
-
+@class CTFAboutBoxWindowController;
 
 extern NSString* kCTFLoadAllFlashViews;
 extern NSString* kCTFLoadFlashViewsForWindow;
@@ -39,6 +40,7 @@ extern NSInteger maxInvisibleDimension;
 @interface CTFMenubarMenuController : NSObject {
 	IBOutlet NSMenu* menu;
     CTFWhitelistWindowController *_whitelistWindowController;
+	CTFAboutBoxWindowController * _aboutBoxWindowController;
 	NSHashTable *_views;
 }
 
@@ -50,6 +52,9 @@ extern NSInteger maxInvisibleDimension;
 - (IBAction) loadKeyWindowFlash: (id) sender;
 - (IBAction) loadKeyWindowInvisibleFlash: (id) sender;
 - (IBAction) showSettingsWindow: (id) sender;
+- (IBAction) showAboutBox: (id) sender;
+
+- (BOOL) multipleFlashViewsExistForWindow: (NSWindow*) window;
 
 - (void) registerView: (NSView*) view;
 - (void) unregisterView: (NSView*) view;

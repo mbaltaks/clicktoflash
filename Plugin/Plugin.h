@@ -2,7 +2,7 @@
 
 The MIT License
 
-Copyright (c) 2008-2009 Click to Flash Developers
+Copyright (c) 2008-2009 ClickToFlash Developers
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,41 +24,113 @@ THE SOFTWARE.
 
 */
 
-
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import "CTFUtilities.h"
+
+
+
+// Subview Tags
+enum subviewTags {
+	CTFMainButtonTag,
+	CTFActionButtonTag,
+	CTFButtonsViewTag,
+	CTFFullScreenButtonTag,
+	CTFHDButtonTag,
+	CTFDownloadButtonTag
+};
+
+
+@class CTFKiller;
+@class CTFMainButton;
+@class CTFActionButton;
+@class CTFButtonsView;
+@class CTFFullScreenWindow;
 
 @interface CTFClickToFlashPlugin : NSView <WebPlugInViewFactory> {
-	NSArray *defaultWhitelist;
-	
     DOMElement *_container;
     NSString *_host;
     NSDictionary* _flashVars;
     id trackingArea;
     NSAlert* _activeAlert;
-    NSString* _badgeText;
     BOOL mouseIsDown;
-    BOOL mouseInside;
     BOOL _isLoadingFromWhitelist;
-    BOOL _fromYouTube;
-	BOOL _hasH264Version;
-	BOOL _hasHDH264Version;
 	WebView *_webView;
-	NSUInteger _sifrVersion;
 	NSString *_baseURL;
 	NSDictionary *_attributes;
 	NSDictionary *_originalOpacityAttributes;
 	NSString *_src;
-	NSString *_videoId;
-	NSString *_launchedAppBundleIdentifier;
+
+	BOOL isConverted;
+	
+	NSView * containerView;
+	CTFMainButton * mainButton;
+	NSView * buttonsContainer;
+	CTFActionButton * actionButton;
+	CTFButtonsView * buttonsView;
+	CTFKiller * killer;
+	
+	CTFFullScreenWindow * fullScreenWindow;
+	
+	NSURL * previewURL;
+	NSImage * previewImage;
+
+	BOOL _sparkleUpdateInProgress;
 }
 
 + (NSView *)plugInViewWithArguments:(NSDictionary *)arguments;
+- (void) setupSubviews;
+
+- (void) revertToOriginalOpacityAttributes;
+- (void) prepareForConversion;
+
+- (NSMenuItem*) addContextualMenuItemWithTitle: (NSString*) title action: (SEL) selector;
+- (NSMenuItem *) addContextualMenuItemWithTitle: (NSString*) title action: (SEL) selector target:(id) target;
+
+- (IBAction) clicked: (id) sender;
+
+- (IBAction)loadFlash:(id)sender;
+- (IBAction)loadAllOnPage:(id)sender;
+- (IBAction)removeFlash: (id) sender;
+- (IBAction)hideFlash: (id) sender;
+- (void) convertTypesForContainer: (BOOL) keepIt;
+
++ (NSDictionary*) flashVarDictionary: (NSString*) flashvarString;
++ (NSString *)launchedAppBundleIdentifier;
+- (void) browseToURLString: (NSString*) URLString;
+- (void) downloadURLString: (NSString*) URLString;
+- (BOOL) useNewStyleUI;
+
+- (IBAction) enterFullScreen: (id) sender;
+- (IBAction) exitFullScreen: (id) sender;
+- (IBAction) toggleFullScreen: (id) sender;
+- (NSButton*) addFullScreenButton;
+
+- (BOOL) isConsideredInvisible;
 
 - (id) initWithArguments:(NSDictionary *)arguments;
-- (void)_migratePrefsToExternalFile;
-- (void) _addApplicationWhitelistArrayToPrefsFile;
 
++ (void) _migratePrefsToExternalFile;
++ (void) _uniquePrefsFileWhitelist;
++ (void) _addApplicationWhitelistArrayToPrefsFile;
+
+
+#pragma mark Accessors
+- (CTFKiller *) killer;
+- (void)setKiller:(CTFKiller *)newKiller;
+- (NSView *) containerView;
+- (void) setContainerView: (NSView *) newContainerView;
+- (CTFMainButton *) mainButton;
+- (void) setMainButton:(CTFMainButton *) newMainButton;
+- (NSView *) buttonsContainer;
+- (void) setButtonsContainer: (NSView *) newButtonsContainer;
+- (CTFActionButton *) actionButton;
+- (void) setActionButton: (CTFActionButton *) newActionButton;
+- (CTFButtonsView *) buttonsView;
+- (void) setButtonsView: (CTFButtonsView *) newButtonsView;
+- (CTFFullScreenWindow *) fullScreenWindow;
+- (void) setFullScreenWindow: (CTFFullScreenWindow *) newFullScreenWindow;
+- (BOOL)isFullScreen;
 - (DOMElement *)container;
 - (void)setContainer:(DOMElement *)newValue;
 - (NSString *)host;
@@ -73,19 +145,14 @@ THE SOFTWARE.
 - (void)setOriginalOpacityAttributes:(NSDictionary *)newValue;
 - (NSString *)src;
 - (void)setSrc:(NSString *)newValue;
-- (NSString *)videoId;
-- (void)setVideoId:(NSString *)newValue;
-- (NSString *)launchedAppBundleIdentifier;
-- (void)setLaunchedAppBundleIdentifier:(NSString *)newValue;
+- (BOOL)isConverted;
+- (void)setIsConverted:(BOOL)newIsConverted;
++ (NSString *)launchedAppBundleIdentifier;
 
-- (IBAction)loadFlash:(id)sender;
-- (IBAction)loadH264:(id)sender;
-- (IBAction)loadAllOnPage:(id)sender;
+- (NSURL *) previewURL;
+- (void) setPreviewURL: (NSURL *) newPreviewURL;
+- (NSImage *) previewImage;
+- (void) setPreviewImage: (NSImage *) newPreviewImage;
 
-- (IBAction)downloadH264:(id)sender;
-
-- (BOOL) isConsideredInvisible;
-
-- (void) _convertTypesForContainer;
 
 @end
