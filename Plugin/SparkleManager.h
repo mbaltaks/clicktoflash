@@ -2,7 +2,7 @@
  
  The MIT License
  
- Copyright (c) 2008-2009 Click to Flash Developers
+ Copyright (c) 2008-2009 ClickToFlash Developers
  
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,7 @@
 
 - (void)startAutomaticallyCheckingForUpdates;
 - (void)checkForUpdates;
+- (void)setAutomaticallyChecksForUpdates:(BOOL)checksForUpdates;
 
 - (NSString *)pathToRelaunch;
 - (void)setPathToRelaunch:(NSString *)newValue;
